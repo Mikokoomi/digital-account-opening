@@ -1,0 +1,39 @@
+# Maven
+target/
+.mvn/wrapper/distribution/
+/.mvn/wrapper/maven-wrapper-distribution-*-bin.zip
+
+# IntelliJ IDEA
+.idea/
+*.iml
+*.iws
+*.ipr
+
+# VS Code
+.vscode/
+
+# Eclipse / Spring Tool Suite
+.classpath
+.project
+.settings/
+.springBeans
+.sts4-cache/
+
+# Logs
+*.log
+logs/
+
+# Environment and local secrets
+.env
+.env.*
+application-local.yml
+application-local.yaml
+application-local.properties
+
+# Operating system
+.DS_Store
+Thumbs.db
+
+# Java
+*.class
+hs_err_pid*
