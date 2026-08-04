@@ -2,7 +2,10 @@ package com.digitalbank.accountopening.product;
 
 import com.digitalbank.accountopening.common.response.ApiResponse;
 import com.digitalbank.accountopening.product.dto.ProductResponse;
-import org.springframework.web.bind.annotation.*;
+import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PathVariable;
+import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RestController;
 
 import java.util.List;
 
