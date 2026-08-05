@@ -44,6 +44,20 @@ public class GlobalExceptionHandler {
         return error(HttpStatus.NOT_FOUND, exception.getMessage(), "APPLICATION_NOT_FOUND");
     }
 
+    @ExceptionHandler(ApplicationNotEditableException.class)
+    public ResponseEntity<ErrorResponse> handleApplicationNotEditable(
+            ApplicationNotEditableException exception
+    ) {
+        return error(HttpStatus.CONFLICT, exception.getMessage(), "APPLICATION_NOT_EDITABLE");
+    }
+
+    @ExceptionHandler(ApplicationNotSubmittableException.class)
+    public ResponseEntity<ErrorResponse> handleApplicationNotSubmittable(
+            ApplicationNotSubmittableException exception
+    ) {
+        return error(HttpStatus.CONFLICT, exception.getMessage(), "APPLICATION_NOT_SUBMITTABLE");
+    }
+
     @ExceptionHandler(MethodArgumentNotValidException.class)
     public ResponseEntity<ErrorResponse> handleValidation(
             MethodArgumentNotValidException exception

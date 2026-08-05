@@ -2,8 +2,11 @@ package com.digitalbank.accountopening.application;
 
 import com.digitalbank.accountopening.application.dto.ApplicationResponse;
 import com.digitalbank.accountopening.application.dto.CreateApplicationRequest;
+import com.digitalbank.accountopening.application.dto.UpdateApplicationRequest;
 import com.digitalbank.accountopening.application.enums.ApplicationStatus;
+import com.digitalbank.accountopening.common.exception.ApplicationNotEditableException;
 import com.digitalbank.accountopening.common.exception.ApplicationNotFoundException;
+import com.digitalbank.accountopening.common.exception.ApplicationNotSubmittableException;
 import com.digitalbank.accountopening.common.exception.ProductInactiveException;
 import com.digitalbank.accountopening.common.exception.ProductNotFoundException;
 import com.digitalbank.accountopening.product.Product;
@@ -20,6 +23,8 @@ import java.util.Optional;
 import java.util.UUID;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.never;
@@ -142,10 +147,162 @@ class ApplicationServiceTest {
         assertEquals("Application not found: " + applicationId, exception.getMessage());
     }
 
+    @Test
+    void updateApplication_shouldUpdateProductForDraftApplication() {
+        UUID applicationId = UUID.randomUUID();
+        AccountApplication application = application(applicationId, "CUSTOMER-001", "CURRENT_ACCOUNT");
+        Product savingProduct = activeProduct("SAVING_ACCOUNT", "Saving Account");
+        when(applicationRepository.findById(applicationId)).thenReturn(Optional.of(application));
+        when(productRepository.findByProductCode("SAVING_ACCOUNT")).thenReturn(Optional.of(savingProduct));
+
+        ApplicationResponse result = applicationService.updateApplication(
+                applicationId,
+                new UpdateApplicationRequest(" SAVING_ACCOUNT ")
+        );
+
+        assertEquals("SAVING_ACCOUNT", application.getProductCode());
+        assertEquals(ApplicationStatus.DRAFT, application.getStatus());
+        assertEquals("SAVING_ACCOUNT", result.productCode());
+        assertEquals("Saving Account", result.productName());
+        verify(historyRepository, never()).save(any());
+    }
+
+    @Test
+    void updateApplication_shouldThrowWhenApplicationDoesNotExist() {
+        UUID applicationId = UUID.randomUUID();
+        when(applicationRepository.findById(applicationId)).thenReturn(Optional.empty());
+
+        assertThrows(
+                ApplicationNotFoundException.class,
+                () -> applicationService.updateApplication(
+                        applicationId,
+                        new UpdateApplicationRequest("SAVING_ACCOUNT")
+                )
+        );
+    }
+
+    @Test
+    void updateApplication_shouldThrowWhenApplicationIsNotDraft() {
+        UUID applicationId = UUID.randomUUID();
+        AccountApplication application = application(applicationId, "CUSTOMER-001", "CURRENT_ACCOUNT");
+        application.setStatus(ApplicationStatus.SUBMITTED);
+        when(applicationRepository.findById(applicationId)).thenReturn(Optional.of(application));
+
+        assertThrows(
+                ApplicationNotEditableException.class,
+                () -> applicationService.updateApplication(
+                        applicationId,
+                        new UpdateApplicationRequest("SAVING_ACCOUNT")
+                )
+        );
+
+        assertEquals("CURRENT_ACCOUNT", application.getProductCode());
+        verify(historyRepository, never()).save(any());
+    }
+
+    @Test
+    void updateApplication_shouldThrowWhenProductDoesNotExist() {
+        UUID applicationId = UUID.randomUUID();
+        AccountApplication application = application(applicationId, "CUSTOMER-001", "CURRENT_ACCOUNT");
+        when(applicationRepository.findById(applicationId)).thenReturn(Optional.of(application));
+        when(productRepository.findByProductCode("UNKNOWN")).thenReturn(Optional.empty());
+
+        assertThrows(
+                ProductNotFoundException.class,
+                () -> applicationService.updateApplication(applicationId, new UpdateApplicationRequest("UNKNOWN"))
+        );
+    }
+
+    @Test
+    void updateApplication_shouldThrowWhenProductIsInactive() {
+        UUID applicationId = UUID.randomUUID();
+        AccountApplication application = application(applicationId, "CUSTOMER-001", "CURRENT_ACCOUNT");
+        Product product = activeProduct("SAVING_ACCOUNT", "Saving Account");
+        product.setActive(false);
+        when(applicationRepository.findById(applicationId)).thenReturn(Optional.of(application));
+        when(productRepository.findByProductCode("SAVING_ACCOUNT")).thenReturn(Optional.of(product));
+
+        assertThrows(
+                ProductInactiveException.class,
+                () -> applicationService.updateApplication(
+                        applicationId,
+                        new UpdateApplicationRequest("SAVING_ACCOUNT")
+                )
+        );
+
+        assertEquals("CURRENT_ACCOUNT", application.getProductCode());
+        verify(historyRepository, never()).save(any());
+    }
+
+    @Test
+    void submitApplication_shouldTransitionDraftToSubmittedAndPersistHistory() {
+        UUID applicationId = UUID.randomUUID();
+        AccountApplication application = application(applicationId, "CUSTOMER-001", "CURRENT_ACCOUNT");
+        when(applicationRepository.findById(applicationId)).thenReturn(Optional.of(application));
+        when(productRepository.findByProductCode("CURRENT_ACCOUNT")).thenReturn(Optional.of(activeProduct()));
+
+        ApplicationResponse result = applicationService.submitApplication(applicationId);
+
+        ArgumentCaptor<ApplicationStatusHistory> historyCaptor = ArgumentCaptor.forClass(ApplicationStatusHistory.class);
+        verify(historyRepository).save(historyCaptor.capture());
+        assertEquals(ApplicationStatus.SUBMITTED, application.getStatus());
+        assertNotNull(application.getSubmittedAt());
+        assertEquals(ApplicationStatus.SUBMITTED, result.status());
+        assertNotNull(result.submittedAt());
+        assertEquals(application, historyCaptor.getValue().getApplication());
+        assertEquals(ApplicationStatus.DRAFT, historyCaptor.getValue().getFromStatus());
+        assertEquals(ApplicationStatus.SUBMITTED, historyCaptor.getValue().getToStatus());
+        assertEquals("CUSTOMER-001", historyCaptor.getValue().getChangedBy());
+        assertEquals("Application submitted", historyCaptor.getValue().getReason());
+    }
+
+    @Test
+    void submitApplication_shouldThrowWhenApplicationIsNotDraft() {
+        UUID applicationId = UUID.randomUUID();
+        AccountApplication application = application(applicationId, "CUSTOMER-001", "CURRENT_ACCOUNT");
+        application.setStatus(ApplicationStatus.SUBMITTED);
+        when(applicationRepository.findById(applicationId)).thenReturn(Optional.of(application));
+
+        assertThrows(
+                ApplicationNotSubmittableException.class,
+                () -> applicationService.submitApplication(applicationId)
+        );
+
+        verify(historyRepository, never()).save(any());
+    }
+
+    @Test
+    void submitApplication_shouldThrowWhenApplicationDoesNotExist() {
+        UUID applicationId = UUID.randomUUID();
+        when(applicationRepository.findById(applicationId)).thenReturn(Optional.empty());
+
+        assertThrows(ApplicationNotFoundException.class, () -> applicationService.submitApplication(applicationId));
+    }
+
+    @Test
+    void submitApplication_shouldThrowWhenProductIsInactive() {
+        UUID applicationId = UUID.randomUUID();
+        AccountApplication application = application(applicationId, "CUSTOMER-001", "CURRENT_ACCOUNT");
+        Product product = activeProduct();
+        product.setActive(false);
+        when(applicationRepository.findById(applicationId)).thenReturn(Optional.of(application));
+        when(productRepository.findByProductCode("CURRENT_ACCOUNT")).thenReturn(Optional.of(product));
+
+        assertThrows(ProductInactiveException.class, () -> applicationService.submitApplication(applicationId));
+
+        assertEquals(ApplicationStatus.DRAFT, application.getStatus());
+        assertNull(application.getSubmittedAt());
+        verify(historyRepository, never()).save(any());
+    }
+
     private Product activeProduct() {
+        return activeProduct("CURRENT_ACCOUNT", "Current Account");
+    }
+
+    private Product activeProduct(String productCode, String productName) {
         Product product = new Product();
-        product.setProductCode("CURRENT_ACCOUNT");
-        product.setProductName("Current Account");
+        product.setProductCode(productCode);
+        product.setProductName(productName);
         product.setActive(true);
         return product;
     }

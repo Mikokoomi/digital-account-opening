@@ -54,6 +54,15 @@ Application processing steps after product selection are planned for subsequent 
 - Recorded the initial `DRAFT` status history in the same transaction as application creation
 - Added service and controller tests for the application APIs
 
+### Week 2 — Day 3
+
+- Implemented draft application update
+- Restricted application updates to the `DRAFT` status
+- Implemented application submission
+- Added the `DRAFT → SUBMITTED` status transition
+- Added submission status history
+- Added update and submit tests
+
 ## Current endpoints
 
 - `GET /api/health`
@@ -62,6 +71,8 @@ Application processing steps after product selection are planned for subsequent 
 - `GET /api/products/{productCode}`
 - `POST /api/applications`
 - `GET /api/applications/{applicationId}`
+- `PATCH /api/applications/{applicationId}`
+- `PATCH /api/applications/{applicationId}/submit`
 - `GET /v3/api-docs`
 - `GET /swagger-ui.html`
 
@@ -122,4 +133,4 @@ After startup, Swagger UI is available at `http://localhost:8080/swagger-ui.html
 
 ## Next step
 
-Implement application update and submit operations.
+Implement application cancellation and status-history retrieval.
