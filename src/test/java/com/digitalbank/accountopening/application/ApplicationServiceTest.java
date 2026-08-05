@@ -1,10 +1,12 @@
 package com.digitalbank.accountopening.application;
 
 import com.digitalbank.accountopening.application.dto.ApplicationResponse;
+import com.digitalbank.accountopening.application.dto.ApplicationHistoryResponse;
 import com.digitalbank.accountopening.application.dto.CreateApplicationRequest;
 import com.digitalbank.accountopening.application.dto.UpdateApplicationRequest;
 import com.digitalbank.accountopening.application.enums.ApplicationStatus;
 import com.digitalbank.accountopening.common.exception.ApplicationNotEditableException;
+import com.digitalbank.accountopening.common.exception.ApplicationNotCancellableException;
 import com.digitalbank.accountopening.common.exception.ApplicationNotFoundException;
 import com.digitalbank.accountopening.common.exception.ApplicationNotSubmittableException;
 import com.digitalbank.accountopening.common.exception.ProductInactiveException;
@@ -20,6 +22,7 @@ import org.mockito.junit.jupiter.MockitoExtension;
 
 import java.time.OffsetDateTime;
 import java.util.Optional;
+import java.util.List;
 import java.util.UUID;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -295,6 +298,130 @@ class ApplicationServiceTest {
         verify(historyRepository, never()).save(any());
     }
 
+    @Test
+    void cancelApplication_shouldCancelDraftAndPersistHistory() {
+        UUID applicationId = UUID.randomUUID();
+        AccountApplication application = application(applicationId, "CUSTOMER-001", "CURRENT_ACCOUNT");
+        when(applicationRepository.findById(applicationId)).thenReturn(Optional.of(application));
+        when(productRepository.findByProductCode("CURRENT_ACCOUNT")).thenReturn(Optional.of(activeProduct()));
+
+        ApplicationResponse result = applicationService.cancelApplication(applicationId);
+
+        ArgumentCaptor<ApplicationStatusHistory> historyCaptor = ArgumentCaptor.forClass(ApplicationStatusHistory.class);
+        verify(historyRepository).save(historyCaptor.capture());
+        assertEquals(ApplicationStatus.CANCELLED, application.getStatus());
+        assertNotNull(application.getCancelledAt());
+        assertEquals(ApplicationStatus.CANCELLED, result.status());
+        assertNotNull(result.cancelledAt());
+        assertEquals(ApplicationStatus.DRAFT, historyCaptor.getValue().getFromStatus());
+        assertEquals(ApplicationStatus.CANCELLED, historyCaptor.getValue().getToStatus());
+        assertEquals("CUSTOMER-001", historyCaptor.getValue().getChangedBy());
+        assertEquals("Application cancelled", historyCaptor.getValue().getReason());
+    }
+
+    @Test
+    void cancelApplication_shouldCancelSubmittedAndKeepSubmittedAt() {
+        UUID applicationId = UUID.randomUUID();
+        AccountApplication application = application(applicationId, "CUSTOMER-001", "CURRENT_ACCOUNT");
+        OffsetDateTime submittedAt = OffsetDateTime.now().minusMinutes(1);
+        application.setStatus(ApplicationStatus.SUBMITTED);
+        application.setSubmittedAt(submittedAt);
+        when(applicationRepository.findById(applicationId)).thenReturn(Optional.of(application));
+        when(productRepository.findByProductCode("CURRENT_ACCOUNT")).thenReturn(Optional.of(activeProduct()));
+
+        applicationService.cancelApplication(applicationId);
+
+        ArgumentCaptor<ApplicationStatusHistory> historyCaptor = ArgumentCaptor.forClass(ApplicationStatusHistory.class);
+        verify(historyRepository).save(historyCaptor.capture());
+        assertEquals(ApplicationStatus.CANCELLED, application.getStatus());
+        assertEquals(submittedAt, application.getSubmittedAt());
+        assertNotNull(application.getCancelledAt());
+        assertEquals(ApplicationStatus.SUBMITTED, historyCaptor.getValue().getFromStatus());
+        assertEquals(ApplicationStatus.CANCELLED, historyCaptor.getValue().getToStatus());
+    }
+
+    @Test
+    void cancelApplication_shouldThrowWhenApplicationDoesNotExist() {
+        UUID applicationId = UUID.randomUUID();
+        when(applicationRepository.findById(applicationId)).thenReturn(Optional.empty());
+
+        assertThrows(ApplicationNotFoundException.class, () -> applicationService.cancelApplication(applicationId));
+
+        verify(historyRepository, never()).save(any());
+    }
+
+    @Test
+    void cancelApplication_shouldThrowWhenApplicationIsAlreadyCancelled() {
+        UUID applicationId = UUID.randomUUID();
+        AccountApplication application = application(applicationId, "CUSTOMER-001", "CURRENT_ACCOUNT");
+        application.setStatus(ApplicationStatus.CANCELLED);
+        when(applicationRepository.findById(applicationId)).thenReturn(Optional.of(application));
+
+        assertThrows(ApplicationNotCancellableException.class, () -> applicationService.cancelApplication(applicationId));
+
+        verify(historyRepository, never()).save(any());
+    }
+
+    @Test
+    void cancelApplication_shouldThrowWhenApplicationIsApproved() {
+        UUID applicationId = UUID.randomUUID();
+        AccountApplication application = application(applicationId, "CUSTOMER-001", "CURRENT_ACCOUNT");
+        application.setStatus(ApplicationStatus.APPROVED);
+        when(applicationRepository.findById(applicationId)).thenReturn(Optional.of(application));
+
+        assertThrows(ApplicationNotCancellableException.class, () -> applicationService.cancelApplication(applicationId));
+
+        verify(historyRepository, never()).save(any());
+    }
+
+    @Test
+    void getApplicationHistory_shouldReturnMappedHistoryInRepositoryOrder() {
+        UUID applicationId = UUID.randomUUID();
+        AccountApplication application = application(applicationId, "CUSTOMER-001", "CURRENT_ACCOUNT");
+        OffsetDateTime firstChangedAt = OffsetDateTime.now().minusMinutes(2);
+        OffsetDateTime secondChangedAt = OffsetDateTime.now().minusMinutes(1);
+        ApplicationStatusHistory createdHistory = history(
+                UUID.randomUUID(),
+                application,
+                null,
+                ApplicationStatus.DRAFT,
+                "Application created",
+                firstChangedAt
+        );
+        ApplicationStatusHistory submittedHistory = history(
+                UUID.randomUUID(),
+                application,
+                ApplicationStatus.DRAFT,
+                ApplicationStatus.SUBMITTED,
+                "Application submitted",
+                secondChangedAt
+        );
+        when(applicationRepository.findById(applicationId)).thenReturn(Optional.of(application));
+        when(historyRepository.findAllByApplicationApplicationIdOrderByChangedAtAsc(applicationId))
+                .thenReturn(List.of(createdHistory, submittedHistory));
+
+        List<ApplicationHistoryResponse> result = applicationService.getApplicationHistory(applicationId);
+
+        assertEquals(2, result.size());
+        assertNull(result.getFirst().fromStatus());
+        assertEquals(ApplicationStatus.DRAFT, result.getFirst().toStatus());
+        assertEquals("Application created", result.getFirst().reason());
+        assertEquals(firstChangedAt, result.getFirst().changedAt());
+        assertEquals(ApplicationStatus.DRAFT, result.get(1).fromStatus());
+        assertEquals(ApplicationStatus.SUBMITTED, result.get(1).toStatus());
+        assertEquals(secondChangedAt, result.get(1).changedAt());
+    }
+
+    @Test
+    void getApplicationHistory_shouldThrowBeforeLoadingHistoryWhenApplicationDoesNotExist() {
+        UUID applicationId = UUID.randomUUID();
+        when(applicationRepository.findById(applicationId)).thenReturn(Optional.empty());
+
+        assertThrows(ApplicationNotFoundException.class, () -> applicationService.getApplicationHistory(applicationId));
+
+        verify(historyRepository, never()).findAllByApplicationApplicationIdOrderByChangedAtAsc(any());
+    }
+
     private Product activeProduct() {
         return activeProduct("CURRENT_ACCOUNT", "Current Account");
     }
@@ -305,6 +432,25 @@ class ApplicationServiceTest {
         product.setProductName(productName);
         product.setActive(true);
         return product;
+    }
+
+    private ApplicationStatusHistory history(
+            UUID historyId,
+            AccountApplication application,
+            ApplicationStatus fromStatus,
+            ApplicationStatus toStatus,
+            String reason,
+            OffsetDateTime changedAt
+    ) {
+        ApplicationStatusHistory history = new ApplicationStatusHistory();
+        history.setHistoryId(historyId);
+        history.setApplication(application);
+        history.setFromStatus(fromStatus);
+        history.setToStatus(toStatus);
+        history.setChangedBy(application.getCustomerId());
+        history.setReason(reason);
+        history.setChangedAt(changedAt);
+        return history;
     }
 
     private AccountApplication application(UUID applicationId, String customerId, String productCode) {

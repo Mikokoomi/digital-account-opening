@@ -1,10 +1,12 @@
 package com.digitalbank.accountopening.application;
 
 import com.digitalbank.accountopening.application.dto.ApplicationResponse;
+import com.digitalbank.accountopening.application.dto.ApplicationHistoryResponse;
 import com.digitalbank.accountopening.application.dto.CreateApplicationRequest;
 import com.digitalbank.accountopening.application.dto.UpdateApplicationRequest;
 import com.digitalbank.accountopening.application.enums.ApplicationStatus;
 import com.digitalbank.accountopening.common.exception.ApplicationNotEditableException;
+import com.digitalbank.accountopening.common.exception.ApplicationNotCancellableException;
 import com.digitalbank.accountopening.common.exception.ApplicationNotFoundException;
 import com.digitalbank.accountopening.common.exception.ApplicationNotSubmittableException;
 import com.digitalbank.accountopening.common.exception.ProductInactiveException;
@@ -15,6 +17,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.OffsetDateTime;
+import java.util.List;
 import java.util.UUID;
 
 @Service
@@ -112,6 +115,39 @@ public class ApplicationService {
         historyRepository.save(history);
 
         return applicationMapper.toResponse(application, product);
+    }
+
+    @Transactional
+    public ApplicationResponse cancelApplication(UUID applicationId) {
+        AccountApplication application = findApplication(applicationId);
+        ApplicationStatus previousStatus = application.getStatus();
+        if (previousStatus != ApplicationStatus.DRAFT && previousStatus != ApplicationStatus.SUBMITTED) {
+            throw new ApplicationNotCancellableException();
+        }
+
+        application.setStatus(ApplicationStatus.CANCELLED);
+        application.setCancelledAt(OffsetDateTime.now());
+
+        ApplicationStatusHistory history = new ApplicationStatusHistory();
+        history.setApplication(application);
+        history.setFromStatus(previousStatus);
+        history.setToStatus(ApplicationStatus.CANCELLED);
+        history.setChangedBy(application.getCustomerId());
+        history.setReason("Application cancelled");
+        historyRepository.save(history);
+
+        Product product = findProduct(application.getProductCode());
+        return applicationMapper.toResponse(application, product);
+    }
+
+    @Transactional(readOnly = true)
+    public List<ApplicationHistoryResponse> getApplicationHistory(UUID applicationId) {
+        findApplication(applicationId);
+        return historyRepository
+                .findAllByApplicationApplicationIdOrderByChangedAtAsc(applicationId)
+                .stream()
+                .map(applicationMapper::toHistoryResponse)
+                .toList();
     }
 
     private AccountApplication findApplication(UUID applicationId) {

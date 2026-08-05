@@ -58,6 +58,13 @@ public class GlobalExceptionHandler {
         return error(HttpStatus.CONFLICT, exception.getMessage(), "APPLICATION_NOT_SUBMITTABLE");
     }
 
+    @ExceptionHandler(ApplicationNotCancellableException.class)
+    public ResponseEntity<ErrorResponse> handleApplicationNotCancellable(
+            ApplicationNotCancellableException exception
+    ) {
+        return error(HttpStatus.CONFLICT, exception.getMessage(), "APPLICATION_NOT_CANCELLABLE");
+    }
+
     @ExceptionHandler(MethodArgumentNotValidException.class)
     public ResponseEntity<ErrorResponse> handleValidation(
             MethodArgumentNotValidException exception

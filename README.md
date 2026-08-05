@@ -74,6 +74,17 @@ Hiện tại project mới hoàn thành phần tạo hồ sơ, cập nhật hồ
 - Lưu lịch sử trạng thái `DRAFT → SUBMITTED`
 - Viết test cho chức năng update và submit
 
+### Tuần 2 – Ngày 4
+
+- Tạo API hủy hồ sơ
+- Cho phép hủy hồ sơ ở trạng thái `DRAFT` hoặc `SUBMITTED`
+- Chuyển trạng thái sang `CANCELLED`
+- Gán thời gian `cancelledAt`
+- Lưu lịch sử chuyển trạng thái sang `CANCELLED`
+- Tạo API xem lịch sử trạng thái hồ sơ
+- Trả lịch sử theo thứ tự thời gian tăng dần
+- Viết test cho chức năng cancel và history
+
 ## Các API hiện có
 
 | Method | Endpoint | Chức năng |
@@ -86,6 +97,8 @@ Hiện tại project mới hoàn thành phần tạo hồ sơ, cập nhật hồ
 | GET | `/api/applications/{applicationId}` | Xem chi tiết hồ sơ |
 | PATCH | `/api/applications/{applicationId}` | Cập nhật `productCode` của hồ sơ `DRAFT` |
 | PATCH | `/api/applications/{applicationId}/submit` | Submit hồ sơ từ `DRAFT` sang `SUBMITTED` |
+| PATCH | `/api/applications/{applicationId}/cancel` | Hủy hồ sơ `DRAFT` hoặc `SUBMITTED` |
+| GET | `/api/applications/{applicationId}/history` | Xem lịch sử thay đổi trạng thái của hồ sơ |
 | GET | `/v3/api-docs` | Xem OpenAPI specification |
 | GET | `/swagger-ui.html` | Mở Swagger UI |
 
@@ -101,7 +114,7 @@ Các trạng thái trong enum `ApplicationStatus`:
 - `CANCELLED`: Hồ sơ đã bị hủy
 - `FAILED`: Hồ sơ gặp lỗi trong quá trình xử lý
 
-Hiện tại project mới sử dụng chính luồng `DRAFT → SUBMITTED`.
+Hiện tại project sử dụng các luồng `DRAFT → SUBMITTED`, `DRAFT → CANCELLED` và `SUBMITTED → CANCELLED`.
 
 ## Database migration
 
@@ -208,8 +221,9 @@ Khi tạo hoặc submit hồ sơ, thay đổi trạng thái và lịch sử ph�
 
 ## Bước tiếp theo
 
-Tuần 2 – Ngày 4:
+Tuần 2 – Ngày 5:
 
-- Tạo API hủy hồ sơ
-- Tạo API xem lịch sử trạng thái
-- Chỉ cho phép hủy hồ sơ ở trạng thái phù hợp
+- Rà soát lại toàn bộ chức năng quản lý hồ sơ
+- Bổ sung các test còn thiếu
+- Kiểm tra Swagger và PostgreSQL
+- Chuẩn bị kịch bản demo và báo cáo Tuần 2

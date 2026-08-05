@@ -1,6 +1,7 @@
 package com.digitalbank.accountopening.application;
 
 import com.digitalbank.accountopening.application.dto.ApplicationResponse;
+import com.digitalbank.accountopening.application.dto.ApplicationHistoryResponse;
 import com.digitalbank.accountopening.application.dto.CreateApplicationRequest;
 import com.digitalbank.accountopening.application.dto.UpdateApplicationRequest;
 import com.digitalbank.accountopening.common.response.ApiResponse;
@@ -16,6 +17,7 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
 import java.util.UUID;
+import java.util.List;
 
 @RestController
 @RequestMapping("/api/applications")
@@ -60,6 +62,24 @@ public class AccountApplicationController {
         return ApiResponse.success(
                 "Application submitted successfully",
                 applicationService.submitApplication(applicationId)
+        );
+    }
+
+    @PatchMapping("/{applicationId}/cancel")
+    public ApiResponse<ApplicationResponse> cancelApplication(@PathVariable UUID applicationId) {
+        return ApiResponse.success(
+                "Application cancelled successfully",
+                applicationService.cancelApplication(applicationId)
+        );
+    }
+
+    @GetMapping("/{applicationId}/history")
+    public ApiResponse<List<ApplicationHistoryResponse>> getApplicationHistory(
+            @PathVariable UUID applicationId
+    ) {
+        return ApiResponse.success(
+                "Application history retrieved successfully",
+                applicationService.getApplicationHistory(applicationId)
         );
     }
 }
