@@ -47,12 +47,21 @@ Application processing steps after product selection are planned for subsequent 
 - Added the `ApplicationStatus` enum
 - Verified Flyway migrations and Hibernate schema validation
 
+### Week 2 Day 2
+
+- Implemented application creation and detail APIs
+- Validated customer and product input, including inactive products
+- Recorded the initial `DRAFT` status history in the same transaction as application creation
+- Added service and controller tests for the application APIs
+
 ## Current endpoints
 
 - `GET /api/health`
 - `GET /actuator/health`
 - `GET /api/products`
 - `GET /api/products/{productCode}`
+- `POST /api/applications`
+- `GET /api/applications/{applicationId}`
 - `GET /v3/api-docs`
 - `GET /swagger-ui.html`
 
@@ -113,4 +122,4 @@ After startup, Swagger UI is available at `http://localhost:8080/swagger-ui.html
 
 ## Next step
 
-Implement the create and retrieve application APIs.
+Implement application update and submit operations.

@@ -9,5 +9,7 @@ public interface ProductRepository extends JpaRepository<Product, Long> {
 
     List<Product> findAllByActiveTrueOrderByProductNameAsc();
 
+    Optional<Product> findByProductCode(String productCode);
+
     Optional<Product> findByProductCodeAndActiveTrue(String productCode);
 }
