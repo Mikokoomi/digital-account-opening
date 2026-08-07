@@ -2,6 +2,7 @@ package com.digitalbank.accountopening.application;
 
 import com.digitalbank.accountopening.application.dto.ApplicationResponse;
 import com.digitalbank.accountopening.application.dto.ApplicationHistoryResponse;
+import com.digitalbank.accountopening.application.dto.ApplicationKycVerificationResponse;
 import com.digitalbank.accountopening.application.dto.CreateApplicationRequest;
 import com.digitalbank.accountopening.application.dto.UpdateApplicationRequest;
 import com.digitalbank.accountopening.application.enums.ApplicationStatus;
@@ -13,6 +14,8 @@ import com.digitalbank.accountopening.common.exception.ProductInactiveException;
 import com.digitalbank.accountopening.common.exception.ProductNotFoundException;
 import com.digitalbank.accountopening.product.Product;
 import com.digitalbank.accountopening.product.ProductRepository;
+import com.digitalbank.accountopening.integration.cifkyc.CifKycVerificationResult;
+import com.digitalbank.accountopening.integration.cifkyc.CifKycVerificationService;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -27,17 +30,20 @@ public class ApplicationService {
     private final ApplicationStatusHistoryRepository historyRepository;
     private final ProductRepository productRepository;
     private final AccountApplicationMapper applicationMapper;
+    private final CifKycVerificationService cifKycVerificationService;
 
     public ApplicationService(
             AccountApplicationRepository applicationRepository,
             ApplicationStatusHistoryRepository historyRepository,
             ProductRepository productRepository,
-            AccountApplicationMapper applicationMapper
+            AccountApplicationMapper applicationMapper,
+            CifKycVerificationService cifKycVerificationService
     ) {
         this.applicationRepository = applicationRepository;
         this.historyRepository = historyRepository;
         this.productRepository = productRepository;
         this.applicationMapper = applicationMapper;
+        this.cifKycVerificationService = cifKycVerificationService;
     }
 
     @Transactional
@@ -148,6 +154,23 @@ public class ApplicationService {
                 .stream()
                 .map(applicationMapper::toHistoryResponse)
                 .toList();
+    }
+
+    @Transactional(readOnly = true)
+    public ApplicationKycVerificationResponse verifyCifKyc(UUID applicationId) {
+        AccountApplication application = findApplication(applicationId);
+        CifKycVerificationResult verificationResult = cifKycVerificationService.verify(
+                application.getCustomerId()
+        );
+
+        return new ApplicationKycVerificationResponse(
+                applicationId,
+                verificationResult.customerId(),
+                verificationResult.eligible(),
+                verificationResult.customerStatus(),
+                verificationResult.kycStatus(),
+                verificationResult.kycExpiryDate()
+        );
     }
 
     private AccountApplication findApplication(UUID applicationId) {

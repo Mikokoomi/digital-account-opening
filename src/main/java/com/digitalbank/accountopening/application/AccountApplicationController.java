@@ -2,6 +2,7 @@ package com.digitalbank.accountopening.application;
 
 import com.digitalbank.accountopening.application.dto.ApplicationResponse;
 import com.digitalbank.accountopening.application.dto.ApplicationHistoryResponse;
+import com.digitalbank.accountopening.application.dto.ApplicationKycVerificationResponse;
 import com.digitalbank.accountopening.application.dto.CreateApplicationRequest;
 import com.digitalbank.accountopening.application.dto.UpdateApplicationRequest;
 import com.digitalbank.accountopening.common.response.ApiResponse;
@@ -80,6 +81,16 @@ public class AccountApplicationController {
         return ApiResponse.success(
                 "Application history retrieved successfully",
                 applicationService.getApplicationHistory(applicationId)
+        );
+    }
+
+    @PostMapping("/{applicationId}/kyc-check")
+    public ApiResponse<ApplicationKycVerificationResponse> verifyCifKyc(
+            @PathVariable UUID applicationId
+    ) {
+        return ApiResponse.success(
+                "CIF/KYC verification completed successfully",
+                applicationService.verifyCifKyc(applicationId)
         );
     }
 }

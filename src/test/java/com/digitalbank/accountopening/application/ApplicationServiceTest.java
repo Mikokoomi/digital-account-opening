@@ -2,6 +2,7 @@ package com.digitalbank.accountopening.application;
 
 import com.digitalbank.accountopening.application.dto.ApplicationResponse;
 import com.digitalbank.accountopening.application.dto.ApplicationHistoryResponse;
+import com.digitalbank.accountopening.application.dto.ApplicationKycVerificationResponse;
 import com.digitalbank.accountopening.application.dto.CreateApplicationRequest;
 import com.digitalbank.accountopening.application.dto.UpdateApplicationRequest;
 import com.digitalbank.accountopening.application.enums.ApplicationStatus;
@@ -13,6 +14,11 @@ import com.digitalbank.accountopening.common.exception.ProductInactiveException;
 import com.digitalbank.accountopening.common.exception.ProductNotFoundException;
 import com.digitalbank.accountopening.product.Product;
 import com.digitalbank.accountopening.product.ProductRepository;
+import com.digitalbank.accountopening.integration.cifkyc.CifKycClientException;
+import com.digitalbank.accountopening.integration.cifkyc.CifKycVerificationErrorCode;
+import com.digitalbank.accountopening.integration.cifkyc.CifKycVerificationException;
+import com.digitalbank.accountopening.integration.cifkyc.CifKycVerificationResult;
+import com.digitalbank.accountopening.integration.cifkyc.CifKycVerificationService;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -20,6 +26,7 @@ import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
+import java.time.LocalDate;
 import java.time.OffsetDateTime;
 import java.util.Optional;
 import java.util.List;
@@ -28,11 +35,14 @@ import java.util.UUID;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
 @ExtendWith(MockitoExtension.class)
@@ -47,6 +57,9 @@ class ApplicationServiceTest {
     @Mock
     private ProductRepository productRepository;
 
+    @Mock
+    private CifKycVerificationService cifKycVerificationService;
+
     private ApplicationService applicationService;
 
     @BeforeEach
@@ -55,7 +68,8 @@ class ApplicationServiceTest {
                 applicationRepository,
                 historyRepository,
                 productRepository,
-                new AccountApplicationMapper()
+                new AccountApplicationMapper(),
+                cifKycVerificationService
         );
     }
 
@@ -458,6 +472,110 @@ class ApplicationServiceTest {
         assertThrows(ApplicationNotFoundException.class, () -> applicationService.getApplicationHistory(applicationId));
 
         verify(historyRepository, never()).findAllByApplicationApplicationIdOrderByChangedAtAsc(any());
+    }
+
+    @Test
+    void verifyCifKyc_shouldUseCustomerIdFromApplicationAndReturnResult() {
+        UUID applicationId = UUID.randomUUID();
+        AccountApplication application = application(applicationId, "CUS001", "CURRENT_ACCOUNT");
+        CifKycVerificationResult verificationResult = verificationResult("CUS001");
+        when(applicationRepository.findById(applicationId)).thenReturn(Optional.of(application));
+        when(cifKycVerificationService.verify("CUS001")).thenReturn(verificationResult);
+
+        ApplicationKycVerificationResponse result = applicationService.verifyCifKyc(applicationId);
+
+        assertEquals(applicationId, result.applicationId());
+        assertEquals("CUS001", result.customerId());
+        assertTrue(result.eligible());
+        assertEquals("ACTIVE", result.customerStatus());
+        assertEquals("VERIFIED", result.kycStatus());
+        assertEquals(LocalDate.of(2027, 12, 31), result.kycExpiryDate());
+        assertEquals(ApplicationStatus.DRAFT, application.getStatus());
+        verify(cifKycVerificationService).verify("CUS001");
+        verify(applicationRepository, never()).save(any());
+        verify(historyRepository, never()).save(any());
+    }
+
+    @Test
+    void verifyCifKyc_shouldThrowWhenApplicationDoesNotExist() {
+        UUID applicationId = UUID.randomUUID();
+        when(applicationRepository.findById(applicationId)).thenReturn(Optional.empty());
+
+        assertThrows(
+                ApplicationNotFoundException.class,
+                () -> applicationService.verifyCifKyc(applicationId)
+        );
+
+        verifyNoInteractions(cifKycVerificationService);
+    }
+
+    @Test
+    void verifyCifKyc_shouldPropagateCustomerNotFound() {
+        assertVerificationFailure(CifKycVerificationErrorCode.CUSTOMER_NOT_FOUND);
+    }
+
+    @Test
+    void verifyCifKyc_shouldPropagateCustomerNotActive() {
+        assertVerificationFailure(CifKycVerificationErrorCode.CUSTOMER_NOT_ACTIVE);
+    }
+
+    @Test
+    void verifyCifKyc_shouldPropagateKycNotVerified() {
+        assertVerificationFailure(CifKycVerificationErrorCode.KYC_NOT_VERIFIED);
+    }
+
+    @Test
+    void verifyCifKyc_shouldPropagateKycExpired() {
+        assertVerificationFailure(CifKycVerificationErrorCode.KYC_EXPIRED);
+    }
+
+    @Test
+    void verifyCifKyc_shouldPropagateIntegrationFailure() {
+        UUID applicationId = UUID.randomUUID();
+        AccountApplication application = application(applicationId, "CUS001", "CURRENT_ACCOUNT");
+        CifKycClientException clientException = new CifKycClientException(
+                "CIF/KYC service is unavailable"
+        );
+        when(applicationRepository.findById(applicationId)).thenReturn(Optional.of(application));
+        when(cifKycVerificationService.verify("CUS001")).thenThrow(clientException);
+
+        CifKycClientException thrownException = assertThrows(
+                CifKycClientException.class,
+                () -> applicationService.verifyCifKyc(applicationId)
+        );
+
+        assertSame(clientException, thrownException);
+        assertEquals(ApplicationStatus.DRAFT, application.getStatus());
+        verify(applicationRepository, never()).save(any());
+        verify(historyRepository, never()).save(any());
+    }
+
+    private void assertVerificationFailure(CifKycVerificationErrorCode errorCode) {
+        UUID applicationId = UUID.randomUUID();
+        AccountApplication application = application(applicationId, "CUS001", "CURRENT_ACCOUNT");
+        CifKycVerificationException verificationException = new CifKycVerificationException(errorCode);
+        when(applicationRepository.findById(applicationId)).thenReturn(Optional.of(application));
+        when(cifKycVerificationService.verify("CUS001")).thenThrow(verificationException);
+
+        CifKycVerificationException thrownException = assertThrows(
+                CifKycVerificationException.class,
+                () -> applicationService.verifyCifKyc(applicationId)
+        );
+
+        assertSame(verificationException, thrownException);
+        assertEquals(ApplicationStatus.DRAFT, application.getStatus());
+        verify(applicationRepository, never()).save(any());
+        verify(historyRepository, never()).save(any());
+    }
+
+    private CifKycVerificationResult verificationResult(String customerId) {
+        return new CifKycVerificationResult(
+                customerId,
+                true,
+                "ACTIVE",
+                "VERIFIED",
+                LocalDate.of(2027, 12, 31)
+        );
     }
 
     private Product activeProduct() {

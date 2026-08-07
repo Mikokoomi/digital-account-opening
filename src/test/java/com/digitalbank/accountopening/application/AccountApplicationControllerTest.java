@@ -1,6 +1,7 @@
 package com.digitalbank.accountopening.application;
 
 import com.digitalbank.accountopening.application.dto.ApplicationHistoryResponse;
+import com.digitalbank.accountopening.application.dto.ApplicationKycVerificationResponse;
 import com.digitalbank.accountopening.application.dto.ApplicationResponse;
 import com.digitalbank.accountopening.application.dto.CreateApplicationRequest;
 import com.digitalbank.accountopening.application.dto.UpdateApplicationRequest;
@@ -9,6 +10,9 @@ import com.digitalbank.accountopening.common.exception.ApplicationNotCancellable
 import com.digitalbank.accountopening.common.exception.ApplicationNotEditableException;
 import com.digitalbank.accountopening.common.exception.ApplicationNotFoundException;
 import com.digitalbank.accountopening.common.exception.ApplicationNotSubmittableException;
+import com.digitalbank.accountopening.integration.cifkyc.CifKycClientException;
+import com.digitalbank.accountopening.integration.cifkyc.CifKycVerificationErrorCode;
+import com.digitalbank.accountopening.integration.cifkyc.CifKycVerificationException;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.WebMvcTest;
@@ -16,6 +20,7 @@ import org.springframework.boot.test.mock.mockito.MockBean;
 import org.springframework.http.MediaType;
 import org.springframework.test.web.servlet.MockMvc;
 
+import java.time.LocalDate;
 import java.util.List;
 import java.time.OffsetDateTime;
 import java.util.UUID;
@@ -223,6 +228,104 @@ class AccountApplicationControllerTest {
         mockMvc.perform(get("/api/applications/{applicationId}/history", "not-a-uuid"))
                 .andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.errorCode").value("INVALID_UUID"));
+    }
+
+    @Test
+    void verifyCifKyc_shouldReturnEligibleResult() throws Exception {
+        UUID applicationId = UUID.randomUUID();
+        when(applicationService.verifyCifKyc(applicationId)).thenReturn(
+                new ApplicationKycVerificationResponse(
+                        applicationId,
+                        "CUS001",
+                        true,
+                        "ACTIVE",
+                        "VERIFIED",
+                        LocalDate.of(2027, 12, 31)
+                )
+        );
+
+        mockMvc.perform(post("/api/applications/{applicationId}/kyc-check", applicationId))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.success").value(true))
+                .andExpect(jsonPath("$.message").value("CIF/KYC verification completed successfully"))
+                .andExpect(jsonPath("$.data.applicationId").value(applicationId.toString()))
+                .andExpect(jsonPath("$.data.customerId").value("CUS001"))
+                .andExpect(jsonPath("$.data.eligible").value(true))
+                .andExpect(jsonPath("$.data.customerStatus").value("ACTIVE"))
+                .andExpect(jsonPath("$.data.kycStatus").value("VERIFIED"))
+                .andExpect(jsonPath("$.data.kycExpiryDate").value("2027-12-31"));
+    }
+
+    @Test
+    void verifyCifKyc_shouldReturnNotFoundWhenApplicationDoesNotExist() throws Exception {
+        UUID applicationId = UUID.randomUUID();
+        when(applicationService.verifyCifKyc(applicationId))
+                .thenThrow(new ApplicationNotFoundException(applicationId));
+
+        mockMvc.perform(post("/api/applications/{applicationId}/kyc-check", applicationId))
+                .andExpect(status().isNotFound())
+                .andExpect(jsonPath("$.errorCode").value("APPLICATION_NOT_FOUND"));
+    }
+
+    @Test
+    void verifyCifKyc_shouldReturnNotFoundWhenCustomerDoesNotExist() throws Exception {
+        UUID applicationId = UUID.randomUUID();
+        when(applicationService.verifyCifKyc(applicationId)).thenThrow(
+                new CifKycVerificationException(CifKycVerificationErrorCode.CUSTOMER_NOT_FOUND)
+        );
+
+        mockMvc.perform(post("/api/applications/{applicationId}/kyc-check", applicationId))
+                .andExpect(status().isNotFound())
+                .andExpect(jsonPath("$.errorCode").value("CUSTOMER_NOT_FOUND"));
+    }
+
+    @Test
+    void verifyCifKyc_shouldReturnConflictWhenCustomerIsNotActive() throws Exception {
+        UUID applicationId = UUID.randomUUID();
+        when(applicationService.verifyCifKyc(applicationId)).thenThrow(
+                new CifKycVerificationException(CifKycVerificationErrorCode.CUSTOMER_NOT_ACTIVE)
+        );
+
+        mockMvc.perform(post("/api/applications/{applicationId}/kyc-check", applicationId))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.errorCode").value("CUSTOMER_NOT_ACTIVE"));
+    }
+
+    @Test
+    void verifyCifKyc_shouldReturnConflictWhenKycIsNotVerified() throws Exception {
+        UUID applicationId = UUID.randomUUID();
+        when(applicationService.verifyCifKyc(applicationId)).thenThrow(
+                new CifKycVerificationException(CifKycVerificationErrorCode.KYC_NOT_VERIFIED)
+        );
+
+        mockMvc.perform(post("/api/applications/{applicationId}/kyc-check", applicationId))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.errorCode").value("KYC_NOT_VERIFIED"));
+    }
+
+    @Test
+    void verifyCifKyc_shouldReturnConflictWhenKycIsExpired() throws Exception {
+        UUID applicationId = UUID.randomUUID();
+        when(applicationService.verifyCifKyc(applicationId)).thenThrow(
+                new CifKycVerificationException(CifKycVerificationErrorCode.KYC_EXPIRED)
+        );
+
+        mockMvc.perform(post("/api/applications/{applicationId}/kyc-check", applicationId))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.errorCode").value("KYC_EXPIRED"));
+    }
+
+    @Test
+    void verifyCifKyc_shouldReturnServiceUnavailableForIntegrationFailure() throws Exception {
+        UUID applicationId = UUID.randomUUID();
+        when(applicationService.verifyCifKyc(applicationId)).thenThrow(
+                new CifKycClientException("CIF/KYC service returned HTTP 500")
+        );
+
+        mockMvc.perform(post("/api/applications/{applicationId}/kyc-check", applicationId))
+                .andExpect(status().isServiceUnavailable())
+                .andExpect(jsonPath("$.errorCode").value("CIF_KYC_SERVICE_UNAVAILABLE"))
+                .andExpect(jsonPath("$.message").value("CIF/KYC service is unavailable"));
     }
 
     private ApplicationResponse response(

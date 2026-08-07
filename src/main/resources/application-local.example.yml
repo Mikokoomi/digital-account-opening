@@ -16,3 +16,7 @@ spring:
 logging:
   level:
     com.digitalbank.accountopening: DEBUG
+
+integration:
+  cif-kyc:
+    base-url: http://localhost:8081

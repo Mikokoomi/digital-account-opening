@@ -1,6 +1,9 @@
 package com.digitalbank.accountopening.common.exception;
 
 import com.digitalbank.accountopening.common.response.ErrorResponse;
+import com.digitalbank.accountopening.integration.cifkyc.CifKycClientException;
+import com.digitalbank.accountopening.integration.cifkyc.CifKycVerificationErrorCode;
+import com.digitalbank.accountopening.integration.cifkyc.CifKycVerificationException;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.validation.FieldError;
@@ -63,6 +66,27 @@ public class GlobalExceptionHandler {
             ApplicationNotCancellableException exception
     ) {
         return error(HttpStatus.CONFLICT, exception.getMessage(), "APPLICATION_NOT_CANCELLABLE");
+    }
+
+    @ExceptionHandler(CifKycVerificationException.class)
+    public ResponseEntity<ErrorResponse> handleCifKycVerification(
+            CifKycVerificationException exception
+    ) {
+        CifKycVerificationErrorCode errorCode = exception.getErrorCode();
+        HttpStatus status = errorCode == CifKycVerificationErrorCode.CUSTOMER_NOT_FOUND
+                ? HttpStatus.NOT_FOUND
+                : HttpStatus.CONFLICT;
+
+        return error(status, exception.getMessage(), errorCode.name());
+    }
+
+    @ExceptionHandler(CifKycClientException.class)
+    public ResponseEntity<ErrorResponse> handleCifKycClient() {
+        return error(
+                HttpStatus.SERVICE_UNAVAILABLE,
+                "CIF/KYC service is unavailable",
+                "CIF_KYC_SERVICE_UNAVAILABLE"
+        );
     }
 
     @ExceptionHandler(MethodArgumentNotValidException.class)
