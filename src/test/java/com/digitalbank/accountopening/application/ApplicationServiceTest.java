@@ -30,6 +30,7 @@ import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -299,6 +300,28 @@ class ApplicationServiceTest {
     }
 
     @Test
+    void createApplication_shouldPropagateHistoryPersistenceFailure() {
+        Product product = activeProduct();
+        AccountApplication savedApplication = application(
+                UUID.randomUUID(),
+                "CUSTOMER-001",
+                "CURRENT_ACCOUNT"
+        );
+        when(productRepository.findByProductCode("CURRENT_ACCOUNT")).thenReturn(Optional.of(product));
+        when(applicationRepository.save(any(AccountApplication.class))).thenReturn(savedApplication);
+        doThrow(new IllegalStateException("History persistence failed"))
+                .when(historyRepository)
+                .save(any(ApplicationStatusHistory.class));
+
+        assertThrows(
+                IllegalStateException.class,
+                () -> applicationService.createApplication(
+                        new CreateApplicationRequest("CUSTOMER-001", "CURRENT_ACCOUNT")
+                )
+        );
+    }
+
+    @Test
     void cancelApplication_shouldCancelDraftAndPersistHistory() {
         UUID applicationId = UUID.randomUUID();
         AccountApplication application = application(applicationId, "CUSTOMER-001", "CURRENT_ACCOUNT");
@@ -338,6 +361,21 @@ class ApplicationServiceTest {
         assertNotNull(application.getCancelledAt());
         assertEquals(ApplicationStatus.SUBMITTED, historyCaptor.getValue().getFromStatus());
         assertEquals(ApplicationStatus.CANCELLED, historyCaptor.getValue().getToStatus());
+    }
+
+    @Test
+    void cancelApplication_shouldNotRequireAnActiveProduct() {
+        UUID applicationId = UUID.randomUUID();
+        AccountApplication application = application(applicationId, "CUSTOMER-001", "CURRENT_ACCOUNT");
+        Product inactiveProduct = activeProduct();
+        inactiveProduct.setActive(false);
+        when(applicationRepository.findById(applicationId)).thenReturn(Optional.of(application));
+        when(productRepository.findByProductCode("CURRENT_ACCOUNT")).thenReturn(Optional.of(inactiveProduct));
+
+        ApplicationResponse result = applicationService.cancelApplication(applicationId);
+
+        assertEquals(ApplicationStatus.CANCELLED, result.status());
+        verify(historyRepository).save(any(ApplicationStatusHistory.class));
     }
 
     @Test

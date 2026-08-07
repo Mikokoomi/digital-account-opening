@@ -29,7 +29,7 @@ Khách hàng hiện hữu
 → Gửi thông báo và lưu audit log
 ```
 
-Hiện tại project mới hoàn thành phần tạo hồ sơ, cập nhật hồ sơ và submit hồ sơ. Các bước CIF/KYC, approval và Core Banking sẽ được thực hiện ở các tuần tiếp theo.
+Hiện tại project đã hoàn thành phần tạo, xem, cập nhật, submit, hủy hồ sơ và xem lịch sử trạng thái. Các bước CIF/KYC, approval và Core Banking sẽ được thực hiện ở các tuần tiếp theo.
 
 ## Tiến độ hiện tại
 
@@ -85,6 +85,15 @@ Hiện tại project mới hoàn thành phần tạo hồ sơ, cập nhật hồ
 - Trả lịch sử theo thứ tự thời gian tăng dần
 - Viết test cho chức năng cancel và history
 
+### Tuần 2 – Ngày 5
+
+- Rà soát toàn bộ chức năng quản lý hồ sơ
+- Chạy lại toàn bộ unit test
+- Kiểm tra các API bằng Swagger và PostgreSQL
+- Kiểm tra validation và error handling
+- Kiểm tra dữ liệu lịch sử trạng thái
+- Chuẩn bị tài liệu review và kịch bản demo Tuần 2
+
 ## Các API hiện có
 
 | Method | Endpoint | Chức năng |
@@ -115,6 +124,17 @@ Các trạng thái trong enum `ApplicationStatus`:
 - `FAILED`: Hồ sơ gặp lỗi trong quá trình xử lý
 
 Hiện tại project sử dụng các luồng `DRAFT → SUBMITTED`, `DRAFT → CANCELLED` và `SUBMITTED → CANCELLED`.
+
+## Kết quả Tuần 2
+
+Tuần 2 đã hoàn thành các chức năng chính để quản lý hồ sơ mở tài khoản:
+
+- Tạo hồ sơ
+- Xem chi tiết hồ sơ
+- Cập nhật hồ sơ khi còn `DRAFT`
+- Submit hồ sơ
+- Hủy hồ sơ
+- Xem lịch sử trạng thái
 
 ## Database migration
 
@@ -157,7 +177,9 @@ Thiết lập biến môi trường trong PowerShell hiện tại:
 ```powershell
 $env:DB_URL="jdbc:postgresql://localhost:5432/account_opening"
 $env:DB_USERNAME="your_database_user"
-$env:DB_PASSWORD="your_database_password"
+$securePassword = Read-Host "Nhập mật khẩu PostgreSQL" -AsSecureString
+$env:DB_PASSWORD = [System.Net.NetworkCredential]::new("", $securePassword).Password
+Remove-Variable securePassword
 ```
 
 Chạy test và khởi động ứng dụng bằng Maven Wrapper:
@@ -221,9 +243,9 @@ Khi tạo hoặc submit hồ sơ, thay đổi trạng thái và lịch sử ph�
 
 ## Bước tiếp theo
 
-Tuần 2 – Ngày 5:
+Tuần 3:
 
-- Rà soát lại toàn bộ chức năng quản lý hồ sơ
-- Bổ sung các test còn thiếu
-- Kiểm tra Swagger và PostgreSQL
-- Chuẩn bị kịch bản demo và báo cáo Tuần 2
+- Xây dựng CIF/KYC Mock Service
+- Kiểm tra thông tin khách hàng theo `customerId`
+- Xử lý các trường hợp KYC hợp lệ, hết hạn hoặc không tồn tại
+- Tích hợp kết quả CIF/KYC vào application workflow

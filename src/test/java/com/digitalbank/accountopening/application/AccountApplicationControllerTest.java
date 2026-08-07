@@ -1,12 +1,14 @@
 package com.digitalbank.accountopening.application;
 
-import com.digitalbank.accountopening.application.dto.ApplicationResponse;
 import com.digitalbank.accountopening.application.dto.ApplicationHistoryResponse;
+import com.digitalbank.accountopening.application.dto.ApplicationResponse;
+import com.digitalbank.accountopening.application.dto.CreateApplicationRequest;
 import com.digitalbank.accountopening.application.dto.UpdateApplicationRequest;
 import com.digitalbank.accountopening.application.enums.ApplicationStatus;
-import com.digitalbank.accountopening.common.exception.ApplicationNotEditableException;
 import com.digitalbank.accountopening.common.exception.ApplicationNotCancellableException;
+import com.digitalbank.accountopening.common.exception.ApplicationNotEditableException;
 import com.digitalbank.accountopening.common.exception.ApplicationNotFoundException;
+import com.digitalbank.accountopening.common.exception.ApplicationNotSubmittableException;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.WebMvcTest;
@@ -14,15 +16,15 @@ import org.springframework.boot.test.mock.mockito.MockBean;
 import org.springframework.http.MediaType;
 import org.springframework.test.web.servlet.MockMvc;
 
+import java.util.List;
 import java.time.OffsetDateTime;
 import java.util.UUID;
-import java.util.List;
 
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.when;
-import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.patch;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.patch;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
@@ -49,6 +51,27 @@ class AccountApplicationControllerTest {
                 .andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.success").value(false))
                 .andExpect(jsonPath("$.errorCode").value("VALIDATION_ERROR"));
+    }
+
+    @Test
+    void createApplication_shouldReturnCreatedApplication() throws Exception {
+        UUID applicationId = UUID.randomUUID();
+        when(applicationService.createApplication(any(CreateApplicationRequest.class)))
+                .thenReturn(response(applicationId, "CURRENT_ACCOUNT", ApplicationStatus.DRAFT, null));
+
+        mockMvc.perform(post("/api/applications")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "customerId": "CUSTOMER-001",
+                                  "productCode": "CURRENT_ACCOUNT"
+                                }
+                                """))
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.success").value(true))
+                .andExpect(jsonPath("$.message").value("Application created successfully"))
+                .andExpect(jsonPath("$.data.applicationId").value(applicationId.toString()))
+                .andExpect(jsonPath("$.data.status").value("DRAFT"));
     }
 
     @Test
@@ -92,6 +115,17 @@ class AccountApplicationControllerTest {
                 .andExpect(jsonPath("$.message").value("Application submitted successfully"))
                 .andExpect(jsonPath("$.data.status").value("SUBMITTED"))
                 .andExpect(jsonPath("$.data.submittedAt").isNotEmpty());
+    }
+
+    @Test
+    void submitApplication_shouldReturnConflictWhenApplicationIsNotSubmittable() throws Exception {
+        UUID applicationId = UUID.randomUUID();
+        when(applicationService.submitApplication(applicationId))
+                .thenThrow(new ApplicationNotSubmittableException());
+
+        mockMvc.perform(patch("/api/applications/{applicationId}/submit", applicationId))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.errorCode").value("APPLICATION_NOT_SUBMITTABLE"));
     }
 
     @Test
@@ -182,6 +216,13 @@ class AccountApplicationControllerTest {
         mockMvc.perform(get("/api/applications/{applicationId}/history", applicationId))
                 .andExpect(status().isNotFound())
                 .andExpect(jsonPath("$.errorCode").value("APPLICATION_NOT_FOUND"));
+    }
+
+    @Test
+    void getApplicationHistory_shouldReturnBadRequestForInvalidUuid() throws Exception {
+        mockMvc.perform(get("/api/applications/{applicationId}/history", "not-a-uuid"))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.errorCode").value("INVALID_UUID"));
     }
 
     private ApplicationResponse response(
