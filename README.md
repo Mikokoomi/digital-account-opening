@@ -149,9 +149,12 @@ Project không có bảng `customers` vì thông tin khách hàng thuộc CIF/KY
 Source code: [Mikokoomi/cif-kyc-mock-service](https://github.com/Mikokoomi/cif-kyc-mock-service)
 
 ```powershell
-Set-Location "C:\Users\Admin\cif-kyc-mock-service"
+git clone https://github.com/Mikokoomi/cif-kyc-mock-service.git
+Set-Location .\cif-kyc-mock-service
 .\mvnw.cmd spring-boot:run
 ```
+
+Nếu đã clone CIF/KYC Mock Service trước đó thì chỉ cần mở terminal tại thư mục service và chạy Maven Wrapper.
 
 Mock Service chạy ở `http://localhost:8081` và cung cấp:
 
