@@ -19,6 +19,7 @@ import com.digitalbank.accountopening.integration.cifkyc.CifKycVerificationServi
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.time.Clock;
 import java.time.OffsetDateTime;
 import java.util.List;
 import java.util.UUID;
@@ -31,19 +32,22 @@ public class ApplicationService {
     private final ProductRepository productRepository;
     private final AccountApplicationMapper applicationMapper;
     private final CifKycVerificationService cifKycVerificationService;
+    private final Clock clock;
 
     public ApplicationService(
             AccountApplicationRepository applicationRepository,
             ApplicationStatusHistoryRepository historyRepository,
             ProductRepository productRepository,
             AccountApplicationMapper applicationMapper,
-            CifKycVerificationService cifKycVerificationService
+            CifKycVerificationService cifKycVerificationService,
+            Clock clock
     ) {
         this.applicationRepository = applicationRepository;
         this.historyRepository = historyRepository;
         this.productRepository = productRepository;
         this.applicationMapper = applicationMapper;
         this.cifKycVerificationService = cifKycVerificationService;
+        this.clock = clock;
     }
 
     @Transactional
@@ -156,12 +160,16 @@ public class ApplicationService {
                 .toList();
     }
 
-    @Transactional(readOnly = true)
+    @Transactional
     public ApplicationKycVerificationResponse verifyCifKyc(UUID applicationId) {
         AccountApplication application = findApplication(applicationId);
         CifKycVerificationResult verificationResult = cifKycVerificationService.verify(
                 application.getCustomerId()
         );
+
+        application.setKycStatus(verificationResult.kycStatus());
+        application.setCifVerifiedAt(OffsetDateTime.now(clock));
+        applicationRepository.save(application);
 
         return new ApplicationKycVerificationResponse(
                 applicationId,

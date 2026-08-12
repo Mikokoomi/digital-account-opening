@@ -26,8 +26,11 @@ import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
+import java.time.Clock;
+import java.time.Instant;
 import java.time.LocalDate;
 import java.time.OffsetDateTime;
+import java.time.ZoneOffset;
 import java.util.Optional;
 import java.util.List;
 import java.util.UUID;
@@ -47,6 +50,8 @@ import static org.mockito.Mockito.when;
 
 @ExtendWith(MockitoExtension.class)
 class ApplicationServiceTest {
+
+    private static final Instant TEST_INSTANT = Instant.parse("2026-08-12T05:00:00Z");
 
     @Mock
     private AccountApplicationRepository applicationRepository;
@@ -69,7 +74,8 @@ class ApplicationServiceTest {
                 historyRepository,
                 productRepository,
                 new AccountApplicationMapper(),
-                cifKycVerificationService
+                cifKycVerificationService,
+                Clock.fixed(TEST_INSTANT, ZoneOffset.UTC)
         );
     }
 
@@ -491,8 +497,10 @@ class ApplicationServiceTest {
         assertEquals("VERIFIED", result.kycStatus());
         assertEquals(LocalDate.of(2027, 12, 31), result.kycExpiryDate());
         assertEquals(ApplicationStatus.DRAFT, application.getStatus());
+        assertEquals("VERIFIED", application.getKycStatus());
+        assertEquals(OffsetDateTime.ofInstant(TEST_INSTANT, ZoneOffset.UTC), application.getCifVerifiedAt());
         verify(cifKycVerificationService).verify("CUS001");
-        verify(applicationRepository, never()).save(any());
+        verify(applicationRepository).save(application);
         verify(historyRepository, never()).save(any());
     }
 
@@ -546,6 +554,8 @@ class ApplicationServiceTest {
 
         assertSame(clientException, thrownException);
         assertEquals(ApplicationStatus.DRAFT, application.getStatus());
+        assertNull(application.getKycStatus());
+        assertNull(application.getCifVerifiedAt());
         verify(applicationRepository, never()).save(any());
         verify(historyRepository, never()).save(any());
     }
@@ -564,6 +574,8 @@ class ApplicationServiceTest {
 
         assertSame(verificationException, thrownException);
         assertEquals(ApplicationStatus.DRAFT, application.getStatus());
+        assertNull(application.getKycStatus());
+        assertNull(application.getCifVerifiedAt());
         verify(applicationRepository, never()).save(any());
         verify(historyRepository, never()).save(any());
     }
