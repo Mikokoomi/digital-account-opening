@@ -2,7 +2,7 @@
 
 ## Mục tiêu Tuần 2
 
-Xây dựng chức năng tạo và quản lý hồ sơ mở tài khoản.
+Hoàn thành Account Application và tích hợp CIF/KYC với mock service độc lập.
 
 ## Chức năng đã hoàn thành
 
@@ -13,12 +13,17 @@ Xây dựng chức năng tạo và quản lý hồ sơ mở tài khoản.
 - Cancel từ `DRAFT` hoặc `SUBMITTED`.
 - Xem lịch sử trạng thái.
 - Validation và xử lý lỗi theo mã lỗi API.
-- Unit test cho service và controller.
+- CIF/KYC Mock Service chạy độc lập ở port `8081`.
+- HTTP integration bằng Spring `RestClient`.
+- Kiểm tra customer tồn tại, `ACTIVE`, KYC `VERIFIED` và chưa hết hạn.
+- Endpoint `POST /api/applications/{applicationId}/kyc-check`.
+- Xử lý lỗi CIF/KYC theo HTTP 404, 409 và 503.
+- Automated test cho client, verification service, application service và controller.
 
 ## Luồng demo
 
 ```text
-Create → Get detail → Update → Submit → Get history → Cancel → Get history
+Create → KYC check → Get detail → Update → Submit → Get history → Cancel → Get history
 ```
 
 ## Business rules
@@ -32,6 +37,10 @@ Create → Get detail → Update → Submit → Get history → Cancel → Get h
 - Product phải tồn tại và active khi create, update và submit.
 - Cancel không phụ thuộc product còn active hay không.
 - History được lấy theo `changedAt` tăng dần.
+- KYC check dùng `customerId` lưu trong application, không nhận customer từ request.
+- Customer phải tồn tại, `ACTIVE`, có KYC `VERIFIED` và ngày hết hạn không trước ngày hiện tại.
+- KYC check không thay đổi application status và không tạo status history.
+- Upstream response thiếu status hoặc ngày hết hạn được coi là integration/data-contract failure, không phải business failure.
 
 ## Transaction
 
@@ -44,7 +53,7 @@ Chưa có integration test rollback thực tế trên PostgreSQL. Vì vậy unit
 
 ## Kết quả test
 
-Lệnh `./mvnw.cmd clean test` hoàn thành với **38 tests**, `Failures: 0`, `Errors: 0`, `Skipped: 0`, `BUILD SUCCESS`.
+Lệnh `.\mvnw.cmd clean test` hoàn thành với **69 tests**, `Failures: 0`, `Errors: 0`, `Skipped: 0`, `BUILD SUCCESS`.
 
 ## Rủi ro kỹ thuật còn theo dõi
 

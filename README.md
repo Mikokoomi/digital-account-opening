@@ -29,7 +29,7 @@ Khách hàng hiện hữu
 → Gửi thông báo và lưu audit log
 ```
 
-Hiện tại project đã hoàn thành phần tạo, xem, cập nhật, submit, hủy hồ sơ và xem lịch sử trạng thái. Các bước CIF/KYC, approval và Core Banking sẽ được thực hiện ở các tuần tiếp theo.
+Hiện tại project đã hoàn thành phần Account Application và tích hợp CIF/KYC: tạo, xem, cập nhật, submit, hủy hồ sơ, xem lịch sử trạng thái và kiểm tra điều kiện CIF/KYC qua mock service độc lập. Approval và Core Banking sẽ được thực hiện ở các tuần tiếp theo.
 
 ## Tiến độ hiện tại
 
@@ -44,55 +44,27 @@ Hiện tại project đã hoàn thành phần tạo, xem, cập nhật, submit, 
 - Tạo API xem danh sách sản phẩm
 - Tạo API xem chi tiết sản phẩm
 
-### Tuần 2 – Ngày 1
+### Tuần 2 — Account Application + CIF/KYC Integration
 
-- Tạo bảng `account_applications`
-- Tạo bảng `application_status_history`
-- Tạo entity `AccountApplication`
-- Tạo entity `ApplicationStatusHistory`
-- Tạo enum `ApplicationStatus`
-- Kiểm tra Flyway migration và Hibernate schema validation
+#### Account Application
 
-### Tuần 2 – Ngày 2
+- Tạo migration, entity, repository, service và controller cho `account_applications` và `application_status_history`
+- Tạo, xem chi tiết và cập nhật `productCode` của hồ sơ `DRAFT`
+- Submit hồ sơ từ `DRAFT → SUBMITTED`
+- Hủy hồ sơ `DRAFT` hoặc `SUBMITTED` sang `CANCELLED`
+- Ghi và truy vấn lịch sử trạng thái theo thời gian tăng dần
+- Validation request, kiểm tra sản phẩm tồn tại/đang hoạt động và xử lý lỗi thống nhất
 
-- Tạo API tạo hồ sơ mở tài khoản
-- Tạo API xem chi tiết hồ sơ
-- Kiểm tra dữ liệu request
-- Kiểm tra sản phẩm tồn tại và đang hoạt động
-- Hồ sơ mới có trạng thái `DRAFT`
-- Tạo lịch sử trạng thái đầu tiên `null → DRAFT`
-- Viết unit test cho service và controller
+#### CIF/KYC Integration
 
-### Tuần 2 – Ngày 3
-
-- Tạo API cập nhật hồ sơ
-- Chỉ cho cập nhật hồ sơ khi trạng thái là `DRAFT`
-- Chỉ cho phép thay đổi `productCode`
-- Tạo API submit hồ sơ
-- Chuyển trạng thái từ `DRAFT → SUBMITTED`
-- Gán thời gian `submittedAt`
-- Lưu lịch sử trạng thái `DRAFT → SUBMITTED`
-- Viết test cho chức năng update và submit
-
-### Tuần 2 – Ngày 4
-
-- Tạo API hủy hồ sơ
-- Cho phép hủy hồ sơ ở trạng thái `DRAFT` hoặc `SUBMITTED`
-- Chuyển trạng thái sang `CANCELLED`
-- Gán thời gian `cancelledAt`
-- Lưu lịch sử chuyển trạng thái sang `CANCELLED`
-- Tạo API xem lịch sử trạng thái hồ sơ
-- Trả lịch sử theo thứ tự thời gian tăng dần
-- Viết test cho chức năng cancel và history
-
-### Tuần 2 – Ngày 5
-
-- Rà soát toàn bộ chức năng quản lý hồ sơ
-- Chạy lại toàn bộ unit test
-- Kiểm tra các API bằng Swagger và PostgreSQL
-- Kiểm tra validation và error handling
-- Kiểm tra dữ liệu lịch sử trạng thái
-- Chuẩn bị tài liệu review và kịch bản demo Tuần 2
+- Xây dựng CIF/KYC Mock Service độc lập chạy ở port `8081`
+- Gọi HTTP bằng Spring `RestClient` thông qua `CifKycClient`
+- Kiểm tra customer tồn tại, trạng thái `ACTIVE`, KYC `VERIFIED` và ngày hết hạn KYC
+- Tạo endpoint `POST /api/applications/{applicationId}/kyc-check`
+- Xử lý các lỗi 404, 409 và 503 theo response convention hiện có
+- Dùng `Clock` để kiểm thử quy tắc hết hạn ổn định
+- Xử lý upstream response thiếu dữ liệu như một integration/data-contract failure
+- Hoàn thành **69 automated tests**, không có failure, error hoặc skipped test
 
 ## Các API hiện có
 
@@ -108,6 +80,7 @@ Hiện tại project đã hoàn thành phần tạo, xem, cập nhật, submit, 
 | PATCH | `/api/applications/{applicationId}/submit` | Submit hồ sơ từ `DRAFT` sang `SUBMITTED` |
 | PATCH | `/api/applications/{applicationId}/cancel` | Hủy hồ sơ `DRAFT` hoặc `SUBMITTED` |
 | GET | `/api/applications/{applicationId}/history` | Xem lịch sử thay đổi trạng thái của hồ sơ |
+| POST | `/api/applications/{applicationId}/kyc-check` | Kiểm tra điều kiện CIF/KYC của khách hàng |
 | GET | `/v3/api-docs` | Xem OpenAPI specification |
 | GET | `/swagger-ui.html` | Mở Swagger UI |
 
@@ -123,11 +96,11 @@ Các trạng thái trong enum `ApplicationStatus`:
 - `CANCELLED`: Hồ sơ đã bị hủy
 - `FAILED`: Hồ sơ gặp lỗi trong quá trình xử lý
 
-Hiện tại project sử dụng các luồng `DRAFT → SUBMITTED`, `DRAFT → CANCELLED` và `SUBMITTED → CANCELLED`.
+Hiện tại project sử dụng các luồng `DRAFT → SUBMITTED`, `DRAFT → CANCELLED` và `SUBMITTED → CANCELLED`. KYC check chỉ kiểm tra điều kiện và không thay đổi trạng thái hoặc tạo status history.
 
 ## Kết quả Tuần 2
 
-Tuần 2 đã hoàn thành các chức năng chính để quản lý hồ sơ mở tài khoản:
+Tuần 2 đã hoàn thành Account Application và CIF/KYC Integration:
 
 - Tạo hồ sơ
 - Xem chi tiết hồ sơ
@@ -135,6 +108,11 @@ Tuần 2 đã hoàn thành các chức năng chính để quản lý hồ sơ m�
 - Submit hồ sơ
 - Hủy hồ sơ
 - Xem lịch sử trạng thái
+- Chạy CIF/KYC Mock Service độc lập
+- Kiểm tra customer tồn tại và đang `ACTIVE`
+- Kiểm tra KYC `VERIFIED` và chưa hết hạn
+- Trả lỗi `CUSTOMER_NOT_FOUND`, `CUSTOMER_NOT_ACTIVE`, `KYC_NOT_VERIFIED`, `KYC_EXPIRED` và `CIF_KYC_SERVICE_UNAVAILABLE`
+- 69 automated tests pass
 
 ## Database migration
 
@@ -159,12 +137,29 @@ Lưu lịch sử thay đổi trạng thái của từng hồ sơ.
 
 Project không có bảng `customers` vì thông tin khách hàng thuộc CIF/KYC Mock Service. Hệ thống chính chỉ lưu `customerId` để tham chiếu.
 
-## Cách chạy project
+## Cách chạy hai service
 
 Điều kiện cần có:
 
 - Java 21
 - PostgreSQL
+
+### CIF/KYC Mock Service
+
+Source code: [Mikokoomi/cif-kyc-mock-service](https://github.com/Mikokoomi/cif-kyc-mock-service)
+
+```powershell
+Set-Location "C:\Users\Admin\cif-kyc-mock-service"
+.\mvnw.cmd spring-boot:run
+```
+
+Mock Service chạy ở `http://localhost:8081` và cung cấp:
+
+```http
+GET /api/customers/{customerId}
+```
+
+### Account Opening
 
 Tạo database có tên `account_opening`, sau đó copy file cấu hình local:
 
@@ -182,17 +177,25 @@ $env:DB_PASSWORD = [System.Net.NetworkCredential]::new("", $securePassword).Pass
 Remove-Variable securePassword
 ```
 
+Đảm bảo file local có URL của mock service nhưng không chứa credential thật:
+
+```yaml
+integration:
+  cif-kyc:
+    base-url: http://localhost:8081
+```
+
 Chạy test và khởi động ứng dụng bằng Maven Wrapper:
 
 ```powershell
 .\mvnw.cmd clean test
-.\mvnw.cmd spring-boot:run
+.\mvnw.cmd spring-boot:run -Dspring-boot.run.profiles=local
 ```
 
 Sau khi chạy thành công, Swagger UI có thể truy cập tại:
 
 ```text
-http://localhost:8080/swagger-ui.html
+http://localhost:8080/swagger-ui/index.html
 ```
 
 ## Phạm vi project
@@ -209,7 +212,7 @@ http://localhost:8080/swagger-ui.html
 - Notification
 - Audit log
 
-Các phần CIF/KYC, approval, Core Banking, retry, notification và audit log thuộc phạm vi project nhưng chưa được triển khai ở giai đoạn hiện tại.
+CIF/KYC Integration đã hoàn thành. Approval, Core Banking, retry, notification và audit log thuộc phạm vi project nhưng chưa được triển khai ở giai đoạn hiện tại.
 
 ### Không thực hiện
 
@@ -241,11 +244,15 @@ Nhiều bản ghi lịch sử thuộc về một hồ sơ. LAZY giúp chỉ tả
 
 Khi tạo hoặc submit hồ sơ, thay đổi trạng thái và lịch sử phải được lưu cùng nhau. Nếu lưu lịch sử thất bại thì thay đổi hồ sơ cũng phải rollback để dữ liệu không bị thiếu hoặc sai.
 
-## Bước tiếp theo
+## Roadmap cập nhật
 
-Tuần 3:
+- **Tuần 1 — Nghiệp vụ và khởi tạo:** tìm hiểu nghiệp vụ, thiết kế luồng/DB/API, khởi tạo Spring Boot, PostgreSQL, Flyway và Product API cơ bản.
+- **Tuần 2 — Account Application + CIF/KYC Integration:** quản lý hồ sơ, migration, trạng thái/lịch sử, CIF/KYC Mock Service, RestClient, verification, endpoint KYC check, error handling và automated tests.
+- **Tuần 3 — Business Rules:** kiểm tra điều kiện sản phẩm và các quy tắc nghiệp vụ mở tài khoản.
+- **Tuần 4 — Workflow trạng thái:** hoàn thiện luồng trạng thái và điều phối xử lý hồ sơ.
+- **Tuần 5 — Nhân viên xét duyệt:** xây dựng luồng nhân viên review, approve và reject.
+- **Tuần 6 — Core Banking Mock Service:** tích hợp service giả lập để tạo tài khoản ngân hàng.
+- **Tuần 7 — Reliability:** retry, error handling và idempotency.
+- **Tuần 8 — Notification và Audit Log:** gửi thông báo và lưu dấu vết xử lý.
 
-- Xây dựng CIF/KYC Mock Service
-- Kiểm tra thông tin khách hàng theo `customerId`
-- Xử lý các trường hợp KYC hợp lệ, hết hạn hoặc không tồn tại
-- Tích hợp kết quả CIF/KYC vào application workflow
+Việc đổi roadmap chỉ thay đổi cách nhóm và đánh số tiến độ, không thay đổi code nghiệp vụ đã hoàn thành.

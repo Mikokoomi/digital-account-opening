@@ -6,8 +6,8 @@
 
 - **Mở gì:** README hoặc tài liệu này.
 - **Bấm hoặc chạy gì:** Giới thiệu ngắn phần quản lý hồ sơ mở tài khoản.
-- **Nói gì:** “Tuần 2 hoàn thiện luồng tạo, cập nhật, submit, hủy và xem lịch sử của một hồ sơ.”
-- **Kết quả mong đợi:** Người xem hiểu phạm vi chỉ là application workflow, chưa có CIF/KYC thật.
+- **Nói gì:** “Tuần 2 hoàn thiện Account Application và tích hợp với CIF/KYC Mock Service độc lập.”
+- **Kết quả mong đợi:** Người xem hiểu luồng quản lý hồ sơ và kiểm tra CIF/KYC qua HTTP.
 
 ## 2. Mở Swagger
 
@@ -37,65 +37,81 @@
 - **Nói gì:** “Bản ghi application và history khởi tạo được lưu cùng nhau.”
 - **Kết quả mong đợi:** Có một history `null → DRAFT`.
 
-## 6. Update product
+## 6. Kiểm tra CIF/KYC
+
+- **Mở gì:** Endpoint `POST /api/applications/{applicationId}/kyc-check` và CIF/KYC Mock Service trên port `8081`.
+- **Bấm hoặc chạy gì:** Gọi KYC check cho application dùng `customerId=CUS001`, không gửi request body.
+- **Nói gì:** “Application Service lấy customerId đã lưu và gọi mock service bằng RestClient. CUS001 đang ACTIVE, KYC VERIFIED và còn hạn.”
+- **Kết quả mong đợi:** HTTP 200, `eligible=true`; application vẫn `DRAFT` và không có history mới.
+
+Test thêm các application dùng `CUS002`, `CUS003`, `CUS004` và `CUS999` để nhận lần lượt `KYC_EXPIRED`, `KYC_NOT_VERIFIED`, `CUSTOMER_NOT_ACTIVE` và `CUSTOMER_NOT_FOUND`.
+
+## 7. Update product
 
 - **Mở gì:** Endpoint `PATCH /api/applications/{applicationId}`.
 - **Bấm hoặc chạy gì:** Gửi product active thứ hai.
 - **Nói gì:** “Khi còn DRAFT, người dùng chỉ được đổi productCode.”
 - **Kết quả mong đợi:** HTTP 200, application vẫn là `DRAFT` và productCode đã đổi.
 
-## 7. Chứng minh update không tạo history
+## 8. Chứng minh update không tạo history
 
 - **Mở gì:** Endpoint `GET /api/applications/{applicationId}/history` hoặc PostgreSQL.
 - **Bấm hoặc chạy gì:** Lấy history của application vừa update.
 - **Nói gì:** “Đổi product không phải là chuyển trạng thái nên không phát sinh history.”
 - **Kết quả mong đợi:** Vẫn chỉ có history `null → DRAFT`.
 
-## 8. Submit
+## 9. Submit
 
 - **Mở gì:** Endpoint `PATCH /api/applications/{applicationId}/submit`.
 - **Bấm hoặc chạy gì:** Execute, không gửi request body.
 - **Nói gì:** “Chỉ DRAFT được submit; thời điểm submittedAt được gán tại đây.”
 - **Kết quả mong đợi:** HTTP 200, trạng thái `SUBMITTED` và `submittedAt` khác rỗng.
 
-## 9. Xem history DRAFT → SUBMITTED
+## 10. Xem history DRAFT → SUBMITTED
 
 - **Mở gì:** Endpoint `GET /api/applications/{applicationId}/history`.
 - **Bấm hoặc chạy gì:** Execute.
 - **Nói gì:** “History trả theo thời gian tăng dần.”
 - **Kết quả mong đợi:** Có `null → DRAFT` rồi `DRAFT → SUBMITTED`.
 
-## 10. Cancel
+## 11. Cancel
 
 - **Mở gì:** Endpoint `PATCH /api/applications/{applicationId}/cancel`.
 - **Bấm hoặc chạy gì:** Execute, không gửi request body.
 - **Nói gì:** “DRAFT hoặc SUBMITTED đều có thể bị hủy.”
 - **Kết quả mong đợi:** HTTP 200, trạng thái `CANCELLED`, `cancelledAt` khác rỗng và `submittedAt` vẫn được giữ nếu hồ sơ đã submit.
 
-## 11. Xem history SUBMITTED → CANCELLED
+## 12. Xem history SUBMITTED → CANCELLED
 
 - **Mở gì:** Endpoint `GET /api/applications/{applicationId}/history`.
 - **Bấm hoặc chạy gì:** Execute.
 - **Nói gì:** “Mỗi chuyển trạng thái hợp lệ đều được lưu history.”
 - **Kết quả mong đợi:** Có ba bản ghi theo thứ tự: `null → DRAFT`, `DRAFT → SUBMITTED`, `SUBMITTED → CANCELLED`.
 
-## 12. Test lỗi submit lần hai
+## 13. Test lỗi submit lần hai
 
 - **Mở gì:** Lại endpoint submit của application đã submit hoặc đã cancel.
 - **Bấm hoặc chạy gì:** Execute thêm một lần.
 - **Nói gì:** “API trả lỗi nghiệp vụ rõ ràng, không trả stack trace nội bộ.”
 - **Kết quả mong đợi:** HTTP 409 với `APPLICATION_NOT_SUBMITTABLE`.
 
-## 13. Chạy Maven test
+## 14. Test service unavailable
+
+- **Mở gì:** Terminal chạy CIF/KYC Mock Service.
+- **Bấm hoặc chạy gì:** Dừng mock service bằng `Ctrl+C`, giữ account-opening chạy và gọi lại KYC check.
+- **Nói gì:** “Lỗi kết nối integration được chuyển thành response thống nhất, không lộ stack trace nội bộ.”
+- **Kết quả mong đợi:** HTTP 503 với `CIF_KYC_SERVICE_UNAVAILABLE`.
+
+## 15. Chạy Maven test
 
 - **Mở gì:** PowerShell ở thư mục project.
 - **Bấm hoặc chạy gì:** Chạy `./mvnw.cmd clean test`.
 - **Nói gì:** “Bộ test bao phủ service và controller cho các luồng thành công, validation và lỗi trạng thái.”
-- **Kết quả mong đợi:** 38 tests pass, `BUILD SUCCESS`.
+- **Kết quả mong đợi:** 69 tests pass, `BUILD SUCCESS`.
 
-## 14. Kết luận
+## 16. Kết luận
 
 - **Mở gì:** README và `docs/week2-review.md`.
 - **Bấm hoặc chạy gì:** Tóm tắt các kết quả vừa kiểm tra.
-- **Nói gì:** “Tuần 2 sẵn sàng để mentor review; CIF/KYC Mock Service sẽ thuộc phạm vi Tuần 3.”
-- **Kết quả mong đợi:** Người xem có thể đối chiếu API, lịch sử trạng thái, test và dữ liệu PostgreSQL.
+- **Nói gì:** “Tuần 2 đã hoàn thành Account Application + CIF/KYC Integration; Tuần 3 mới sẽ bắt đầu Business Rules.”
+- **Kết quả mong đợi:** Người xem có thể đối chiếu API, CIF/KYC rules, lịch sử trạng thái, test và dữ liệu PostgreSQL.
