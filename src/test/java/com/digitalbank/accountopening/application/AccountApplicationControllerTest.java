@@ -10,6 +10,7 @@ import com.digitalbank.accountopening.common.exception.ApplicationNotCancellable
 import com.digitalbank.accountopening.common.exception.ApplicationNotEditableException;
 import com.digitalbank.accountopening.common.exception.ApplicationNotFoundException;
 import com.digitalbank.accountopening.common.exception.ApplicationNotSubmittableException;
+import com.digitalbank.accountopening.common.exception.ApplicationRuleEvaluationNotAllowedException;
 import com.digitalbank.accountopening.common.exception.KycAlreadyVerifiedException;
 import com.digitalbank.accountopening.integration.cifkyc.CifKycClientException;
 import com.digitalbank.accountopening.integration.cifkyc.CifKycVerificationErrorCode;
@@ -436,9 +437,29 @@ void evaluateRules_shouldReturnNotFoundWhenApplicationDoesNotExist()
                     applicationId
             ))
             .andExpect(status().isNotFound())
-            .andExpect(jsonPath("$.errorCode")
+                .andExpect(jsonPath("$.errorCode")
                     .value("APPLICATION_NOT_FOUND"));
 }
+
+    @Test
+    void evaluateRules_shouldReturnConflictWhenApplicationStatusIsNotAllowed() throws Exception {
+        UUID applicationId = UUID.randomUUID();
+        when(applicationService.evaluateRules(applicationId)).thenThrow(
+                new ApplicationRuleEvaluationNotAllowedException(ApplicationStatus.CANCELLED)
+        );
+
+        mockMvc.perform(post(
+                        "/api/applications/{applicationId}/evaluate-rules",
+                        applicationId
+                ))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.success").value(false))
+                .andExpect(jsonPath("$.errorCode")
+                        .value("APPLICATION_RULE_EVALUATION_NOT_ALLOWED"))
+                .andExpect(jsonPath("$.message").value(
+                        "Business rule evaluation is not allowed for application status: CANCELLED"
+                ));
+    }
     private ApplicationResponse response(
             UUID applicationId,
             String productCode,

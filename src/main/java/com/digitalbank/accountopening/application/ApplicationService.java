@@ -14,6 +14,7 @@ import com.digitalbank.accountopening.common.exception.ApplicationNotEditableExc
 import com.digitalbank.accountopening.common.exception.ApplicationNotCancellableException;
 import com.digitalbank.accountopening.common.exception.ApplicationNotFoundException;
 import com.digitalbank.accountopening.common.exception.ApplicationNotSubmittableException;
+import com.digitalbank.accountopening.common.exception.ApplicationRuleEvaluationNotAllowedException;
 import com.digitalbank.accountopening.common.exception.ProductInactiveException;
 import com.digitalbank.accountopening.common.exception.ProductNotFoundException;
 import com.digitalbank.accountopening.product.Product;
@@ -26,11 +27,16 @@ import com.digitalbank.accountopening.common.exception.KycAlreadyVerifiedExcepti
 
 import java.time.Clock;
 import java.time.OffsetDateTime;
+import java.util.EnumSet;
 import java.util.List;
+import java.util.Set;
 import java.util.UUID;
 
 @Service
 public class ApplicationService {
+
+    private static final Set<ApplicationStatus> RULE_EVALUATION_ALLOWED_STATUSES =
+            EnumSet.of(ApplicationStatus.DRAFT, ApplicationStatus.SUBMITTED);
 
     private final AccountApplicationRepository applicationRepository;
     private final ApplicationStatusHistoryRepository historyRepository;
@@ -200,6 +206,10 @@ public class ApplicationService {
     @Transactional(readOnly = true)
     public ApplicationRuleEvaluationResponse evaluateRules(UUID applicationId) {
         AccountApplication application = findApplication(applicationId);
+
+        if (!RULE_EVALUATION_ALLOWED_STATUSES.contains(application.getStatus())) {
+            throw new ApplicationRuleEvaluationNotAllowedException(application.getStatus());
+        }
 
         RuleEvaluationResult result =
                 applicationRuleEvaluationService.evaluate(application);

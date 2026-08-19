@@ -16,6 +16,7 @@ import com.digitalbank.accountopening.common.exception.ApplicationNotEditableExc
 import com.digitalbank.accountopening.common.exception.ApplicationNotCancellableException;
 import com.digitalbank.accountopening.common.exception.ApplicationNotFoundException;
 import com.digitalbank.accountopening.common.exception.ApplicationNotSubmittableException;
+import com.digitalbank.accountopening.common.exception.ApplicationRuleEvaluationNotAllowedException;
 import com.digitalbank.accountopening.common.exception.ProductInactiveException;
 import com.digitalbank.accountopening.common.exception.ProductNotFoundException;
 import com.digitalbank.accountopening.common.exception.KycAlreadyVerifiedException;
@@ -717,6 +718,7 @@ class ApplicationServiceTest {
         assertTrue(response.failedRules().isEmpty());
 
         verify(applicationRuleEvaluationService).evaluate(application);
+        verify(applicationRepository, never()).save(any());
         verify(historyRepository, never()).save(any());
     }
     @Test
@@ -765,6 +767,78 @@ class ApplicationServiceTest {
         );
 
         verify(applicationRuleEvaluationService).evaluate(application);
+        verify(applicationRepository, never()).save(any());
+        verify(historyRepository, never()).save(any());
+    }
+
+    @Test
+    void evaluateRules_shouldAllowSubmittedApplication() {
+        UUID applicationId = UUID.randomUUID();
+        AccountApplication application = application(applicationId, "CUSTOMER-001", "CURRENT_ACCOUNT");
+        application.setStatus(ApplicationStatus.SUBMITTED);
+
+        RuleEvaluationResult evaluationResult = RuleEvaluationResult.from(List.of(
+                new RuleResult(ApplicationRuleCode.PRODUCT_ACTIVE, true, "Product is active"),
+                new RuleResult(ApplicationRuleCode.KYC_VERIFIED, true, "KYC verification is confirmed")
+        ));
+        when(applicationRepository.findById(applicationId)).thenReturn(Optional.of(application));
+        when(applicationRuleEvaluationService.evaluate(application)).thenReturn(evaluationResult);
+
+        ApplicationRuleEvaluationResponse response = applicationService.evaluateRules(applicationId);
+
+        assertTrue(response.eligible());
+        assertEquals(ApplicationStatus.SUBMITTED, application.getStatus());
+        verify(applicationRuleEvaluationService).evaluate(application);
+        verify(applicationRepository, never()).save(any());
+        verify(historyRepository, never()).save(any());
+    }
+
+    @Test
+    void evaluateRules_shouldRejectStatusesOutsideDraftAndSubmitted() {
+        for (ApplicationStatus status : List.of(
+                ApplicationStatus.UNDER_REVIEW,
+                ApplicationStatus.APPROVED,
+                ApplicationStatus.REJECTED,
+                ApplicationStatus.CANCELLED,
+                ApplicationStatus.FAILED
+        )) {
+            UUID applicationId = UUID.randomUUID();
+            AccountApplication application = application(applicationId, "CUSTOMER-001", "CURRENT_ACCOUNT");
+            application.setStatus(status);
+            when(applicationRepository.findById(applicationId)).thenReturn(Optional.of(application));
+
+            ApplicationRuleEvaluationNotAllowedException exception = assertThrows(
+                    ApplicationRuleEvaluationNotAllowedException.class,
+                    () -> applicationService.evaluateRules(applicationId)
+            );
+
+            assertEquals(
+                    "Business rule evaluation is not allowed for application status: " + status,
+                    exception.getMessage()
+            );
+            assertEquals(status, application.getStatus());
+        }
+
+        verifyNoInteractions(applicationRuleEvaluationService);
+        verify(applicationRepository, never()).save(any());
+        verify(historyRepository, never()).save(any());
+    }
+
+    @Test
+    void evaluateRules_shouldRejectNullStatus() {
+        UUID applicationId = UUID.randomUUID();
+        AccountApplication application = application(applicationId, "CUSTOMER-001", "CURRENT_ACCOUNT");
+        application.setStatus(null);
+        when(applicationRepository.findById(applicationId)).thenReturn(Optional.of(application));
+
+        ApplicationRuleEvaluationNotAllowedException exception = assertThrows(
+                ApplicationRuleEvaluationNotAllowedException.class,
+                () -> applicationService.evaluateRules(applicationId)
+        );
+
+        assertEquals("Business rule evaluation is not allowed for application status: null", exception.getMessage());
+        verifyNoInteractions(applicationRuleEvaluationService);
+        verify(applicationRepository, never()).save(any());
         verify(historyRepository, never()).save(any());
     }
 }

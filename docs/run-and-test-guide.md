@@ -579,7 +579,65 @@ Invoke-RestMethod "http://localhost:8080/api/applications/$applicationId/history
 
 Với application mới tạo chỉ KYC check, history vẫn chỉ có bản ghi khởi tạo `null → DRAFT`.
 
-## 21. Một số lỗi thường gặp
+## 21. Week 3: evaluate Business Rules
+
+Sau khi tạo application, endpoint sau đánh giá các rule hiện đang active theo thứ tự cố định `PRODUCT_ACTIVE` rồi `KYC_VERIFIED`:
+
+```http
+POST http://localhost:8080/api/applications/{applicationId}/evaluate-rules
+```
+
+Không cần request body. Ví dụ bằng PowerShell:
+
+```powershell
+Invoke-RestMethod -Method Post `
+    -Uri "http://localhost:8080/api/applications/$applicationId/evaluate-rules" |
+    ConvertTo-Json -Depth 6
+```
+
+Trước khi KYC pass, response vẫn là HTTP `200` nhưng `eligible=false`, với `KYC_VERIFIED` xuất hiện trong `failedRules`:
+
+```json
+{
+  "data": {
+    "eligible": false,
+    "failedRules": [
+      { "ruleCode": "KYC_VERIFIED", "passed": false }
+    ]
+  }
+}
+```
+
+Sau KYC pass và product active, response là HTTP `200`, `eligible=true` và `failedRules` rỗng:
+
+```json
+{
+  "data": {
+    "eligible": true,
+    "failedRules": []
+  }
+}
+```
+
+Evaluation chỉ được phép khi application có status `DRAFT` hoặc `SUBMITTED`. Các status như `UNDER_REVIEW`, `APPROVED`, `REJECTED`, `CANCELLED` và `FAILED` nhận HTTP `409` với `errorCode=APPLICATION_RULE_EVALUATION_NOT_ALLOWED`. Endpoint này chỉ đọc dữ liệu: gọi nhiều lần không đổi status hoặc tạo history.
+
+KYC check chỉ cần chạy một lần thành công. Nếu application đã có `kycStatus=VERIFIED` và `cifVerifiedAt`, gọi lại:
+
+```http
+POST /api/applications/{applicationId}/kyc-check
+```
+
+trả HTTP `409` với `errorCode=KYC_ALREADY_VERIFIED` và không gọi CIF/KYC Mock Service lại.
+
+### Thứ tự test ngắn trong Swagger
+
+1. Tạo application với `CUS001` và một product active.
+2. Gọi `evaluate-rules` trước KYC, xác nhận `eligible=false`.
+3. Gọi `kyc-check`, xác nhận KYC pass.
+4. Gọi `evaluate-rules` sau KYC, xác nhận `eligible=true`.
+5. Gọi `kyc-check` lần hai, xác nhận HTTP `409 KYC_ALREADY_VERIFIED`.
+
+## 22. Một số lỗi thường gặp
 
 | Triệu chứng | Nguyên nhân thường gặp | Cách kiểm tra/xử lý |
 |---|---|---|
@@ -609,7 +667,7 @@ Stop-Process -Id THAY_PID_VAO_DAY
 
 Không dừng process nếu chưa chắc đó là process nào.
 
-## 22. Cheat sheet: command thường dùng
+## 23. Cheat sheet: command thường dùng
 
 | Command | Dùng khi nào? | Kết quả mong đợi |
 |---|---|---|
@@ -623,7 +681,7 @@ Không dừng process nếu chưa chắc đó là process nào.
 | `Invoke-RestMethod "http://localhost:8081/api/customers/CUS001"` | Kiểm tra Mock Service | Customer CUS001 được trả về |
 | `netstat -ano \| findstr :8080` | Khi port 8080 bị dùng | Thấy PID đang dùng port |
 
-## 23. Git command cơ bản
+## 24. Git command cơ bản
 
 Các lệnh này chỉ để xem trạng thái; không làm thay đổi code hay lịch sử Git.
 

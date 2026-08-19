@@ -68,6 +68,17 @@ public class GlobalExceptionHandler {
         return error(HttpStatus.CONFLICT, exception.getMessage(), "APPLICATION_NOT_CANCELLABLE");
     }
 
+    @ExceptionHandler(ApplicationRuleEvaluationNotAllowedException.class)
+    public ResponseEntity<ErrorResponse> handleApplicationRuleEvaluationNotAllowed(
+            ApplicationRuleEvaluationNotAllowedException exception
+    ) {
+        return error(
+                HttpStatus.CONFLICT,
+                exception.getMessage(),
+                "APPLICATION_RULE_EVALUATION_NOT_ALLOWED"
+        );
+    }
+
     @ExceptionHandler(KycAlreadyVerifiedException.class)
     public ResponseEntity<ErrorResponse> handleKycAlreadyVerified(
                 KycAlreadyVerifiedException exception
