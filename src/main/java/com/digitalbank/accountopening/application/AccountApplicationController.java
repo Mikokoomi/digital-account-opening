@@ -6,6 +6,7 @@ import com.digitalbank.accountopening.application.dto.ApplicationKycVerification
 import com.digitalbank.accountopening.application.dto.CreateApplicationRequest;
 import com.digitalbank.accountopening.application.dto.UpdateApplicationRequest;
 import com.digitalbank.accountopening.common.response.ApiResponse;
+import com.digitalbank.accountopening.application.dto.ApplicationRuleEvaluationResponse;
 import jakarta.validation.Valid;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
@@ -93,4 +94,13 @@ public class AccountApplicationController {
                 applicationService.verifyCifKyc(applicationId)
         );
     }
+    @PostMapping("/{applicationId}/evaluate-rules")
+        public ApiResponse<ApplicationRuleEvaluationResponse> evaluateRules(
+                @PathVariable UUID applicationId
+        ) {
+        return ApiResponse.success(
+                "Application business rules evaluated successfully",
+                applicationService.evaluateRules(applicationId)
+        );
+        }
 }

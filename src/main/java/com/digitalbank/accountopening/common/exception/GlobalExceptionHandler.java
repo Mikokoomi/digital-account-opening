@@ -68,6 +68,16 @@ public class GlobalExceptionHandler {
         return error(HttpStatus.CONFLICT, exception.getMessage(), "APPLICATION_NOT_CANCELLABLE");
     }
 
+    @ExceptionHandler(KycAlreadyVerifiedException.class)
+    public ResponseEntity<ErrorResponse> handleKycAlreadyVerified(
+                KycAlreadyVerifiedException exception
+        ) {
+        return error(
+                HttpStatus.CONFLICT,
+                exception.getMessage(),
+                "KYC_ALREADY_VERIFIED"
+        );
+        }
     @ExceptionHandler(CifKycVerificationException.class)
     public ResponseEntity<ErrorResponse> handleCifKycVerification(
             CifKycVerificationException exception

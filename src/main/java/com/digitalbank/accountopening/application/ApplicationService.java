@@ -1,5 +1,9 @@
 package com.digitalbank.accountopening.application;
 
+import com.digitalbank.accountopening.application.dto.ApplicationRuleEvaluationResponse;
+import com.digitalbank.accountopening.application.rule.ApplicationRuleEvaluationService;
+import com.digitalbank.accountopening.application.rule.RuleEvaluationResult;
+
 import com.digitalbank.accountopening.application.dto.ApplicationResponse;
 import com.digitalbank.accountopening.application.dto.ApplicationHistoryResponse;
 import com.digitalbank.accountopening.application.dto.ApplicationKycVerificationResponse;
@@ -18,6 +22,7 @@ import com.digitalbank.accountopening.integration.cifkyc.CifKycVerificationResul
 import com.digitalbank.accountopening.integration.cifkyc.CifKycVerificationService;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import com.digitalbank.accountopening.common.exception.KycAlreadyVerifiedException;
 
 import java.time.Clock;
 import java.time.OffsetDateTime;
@@ -31,7 +36,9 @@ public class ApplicationService {
     private final ApplicationStatusHistoryRepository historyRepository;
     private final ProductRepository productRepository;
     private final AccountApplicationMapper applicationMapper;
+    private final ApplicationRuleEvaluationService applicationRuleEvaluationService;
     private final CifKycVerificationService cifKycVerificationService;
+
     private final Clock clock;
 
     public ApplicationService(
@@ -40,6 +47,7 @@ public class ApplicationService {
             ProductRepository productRepository,
             AccountApplicationMapper applicationMapper,
             CifKycVerificationService cifKycVerificationService,
+            ApplicationRuleEvaluationService applicationRuleEvaluationService,
             Clock clock
     ) {
         this.applicationRepository = applicationRepository;
@@ -47,6 +55,7 @@ public class ApplicationService {
         this.productRepository = productRepository;
         this.applicationMapper = applicationMapper;
         this.cifKycVerificationService = cifKycVerificationService;
+        this.applicationRuleEvaluationService = applicationRuleEvaluationService;
         this.clock = clock;
     }
 
@@ -150,6 +159,7 @@ public class ApplicationService {
         return applicationMapper.toResponse(application, product);
     }
 
+
     @Transactional(readOnly = true)
     public List<ApplicationHistoryResponse> getApplicationHistory(UUID applicationId) {
         findApplication(applicationId);
@@ -162,10 +172,16 @@ public class ApplicationService {
 
     @Transactional
     public ApplicationKycVerificationResponse verifyCifKyc(UUID applicationId) {
-        AccountApplication application = findApplication(applicationId);
-        CifKycVerificationResult verificationResult = cifKycVerificationService.verify(
-                application.getCustomerId()
-        );
+    AccountApplication application = findApplication(applicationId);
+
+    if ("VERIFIED".equals(application.getKycStatus())
+            && application.getCifVerifiedAt() != null) {
+        throw new KycAlreadyVerifiedException();
+    }
+
+    CifKycVerificationResult verificationResult = cifKycVerificationService.verify(
+            application.getCustomerId()
+    );
 
         application.setKycStatus(verificationResult.kycStatus());
         application.setCifVerifiedAt(OffsetDateTime.now(clock));
@@ -181,6 +197,20 @@ public class ApplicationService {
         );
     }
 
+    @Transactional(readOnly = true)
+    public ApplicationRuleEvaluationResponse evaluateRules(UUID applicationId) {
+        AccountApplication application = findApplication(applicationId);
+
+        RuleEvaluationResult result =
+                applicationRuleEvaluationService.evaluate(application);
+
+        return new ApplicationRuleEvaluationResponse(
+                applicationId,
+                result.eligible(),
+                result.ruleResults(),
+                result.failedRules()
+        );
+    }
     private AccountApplication findApplication(UUID applicationId) {
         return applicationRepository.findById(applicationId)
                 .orElseThrow(() -> new ApplicationNotFoundException(applicationId));
@@ -198,4 +228,6 @@ public class ApplicationService {
         }
         return product;
     }
+
+
 }

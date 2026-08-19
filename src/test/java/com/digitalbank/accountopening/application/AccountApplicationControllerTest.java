@@ -10,9 +10,13 @@ import com.digitalbank.accountopening.common.exception.ApplicationNotCancellable
 import com.digitalbank.accountopening.common.exception.ApplicationNotEditableException;
 import com.digitalbank.accountopening.common.exception.ApplicationNotFoundException;
 import com.digitalbank.accountopening.common.exception.ApplicationNotSubmittableException;
+import com.digitalbank.accountopening.common.exception.KycAlreadyVerifiedException;
 import com.digitalbank.accountopening.integration.cifkyc.CifKycClientException;
 import com.digitalbank.accountopening.integration.cifkyc.CifKycVerificationErrorCode;
 import com.digitalbank.accountopening.integration.cifkyc.CifKycVerificationException;
+import com.digitalbank.accountopening.application.dto.ApplicationRuleEvaluationResponse;
+import com.digitalbank.accountopening.application.rule.ApplicationRuleCode;
+import com.digitalbank.accountopening.application.rule.RuleResult;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.WebMvcTest;
@@ -327,7 +331,114 @@ class AccountApplicationControllerTest {
                 .andExpect(jsonPath("$.errorCode").value("CIF_KYC_SERVICE_UNAVAILABLE"))
                 .andExpect(jsonPath("$.message").value("CIF/KYC service is unavailable"));
     }
+    @Test
+        void verifyCifKyc_shouldReturnConflictWhenAlreadyVerified() throws Exception {
+        UUID applicationId = UUID.randomUUID();
 
+        when(applicationService.verifyCifKyc(applicationId))
+                .thenThrow(new KycAlreadyVerifiedException());
+
+        mockMvc.perform(post("/api/applications/{applicationId}/kyc-check", applicationId))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.success").value(false))
+                .andExpect(jsonPath("$.errorCode").value("KYC_ALREADY_VERIFIED"))
+                .andExpect(jsonPath("$.message")
+                        .value("Application already has a successful KYC verification"));
+        }
+
+        @Test
+        void evaluateRules_shouldReturnEligibleResult() throws Exception {
+        UUID applicationId = UUID.randomUUID();
+
+        List<RuleResult> ruleResults = List.of(
+                new RuleResult(
+                        ApplicationRuleCode.PRODUCT_ACTIVE,
+                        true,
+                        "Product is active"
+                ),
+                new RuleResult(
+                        ApplicationRuleCode.KYC_VERIFIED,
+                        true,
+                        "KYC verification is confirmed"
+                )
+        );
+
+        when(applicationService.evaluateRules(applicationId))
+                .thenReturn(new ApplicationRuleEvaluationResponse(
+                        applicationId,
+                        true,
+                        ruleResults,
+                        List.of()
+                ));
+
+        mockMvc.perform(post(
+                        "/api/applications/{applicationId}/evaluate-rules",
+                        applicationId
+                ))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.success").value(true))
+                .andExpect(jsonPath("$.message")
+                        .value("Application business rules evaluated successfully"))
+                .andExpect(jsonPath("$.data.applicationId")
+                        .value(applicationId.toString()))
+                .andExpect(jsonPath("$.data.eligible").value(true))
+                .andExpect(jsonPath("$.data.ruleResults").isArray())
+                .andExpect(jsonPath("$.data.ruleResults.length()").value(2))
+                .andExpect(jsonPath("$.data.failedRules").isEmpty());
+        }
+        @Test
+void evaluateRules_shouldReturnNotEligibleResult() throws Exception {
+    UUID applicationId = UUID.randomUUID();
+
+    RuleResult productRule = new RuleResult(
+            ApplicationRuleCode.PRODUCT_ACTIVE,
+            true,
+            "Product is active"
+    );
+
+    RuleResult kycRule = new RuleResult(
+            ApplicationRuleCode.KYC_VERIFIED,
+            false,
+            "KYC has not been verified"
+    );
+
+    when(applicationService.evaluateRules(applicationId))
+            .thenReturn(new ApplicationRuleEvaluationResponse(
+                    applicationId,
+                    false,
+                    List.of(productRule, kycRule),
+                    List.of(kycRule)
+            ));
+
+    mockMvc.perform(post(
+                    "/api/applications/{applicationId}/evaluate-rules",
+                    applicationId
+            ))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.data.eligible").value(false))
+            .andExpect(jsonPath("$.data.failedRules.length()").value(1))
+            .andExpect(jsonPath("$.data.failedRules[0].ruleCode")
+                    .value("KYC_VERIFIED"))
+            .andExpect(jsonPath("$.data.failedRules[0].passed")
+                    .value(false));
+}
+@Test
+void evaluateRules_shouldReturnNotFoundWhenApplicationDoesNotExist()
+        throws Exception {
+
+    UUID applicationId = UUID.randomUUID();
+
+    when(applicationService.evaluateRules(applicationId))
+            .thenThrow(new ApplicationNotFoundException(applicationId));
+
+    mockMvc.perform(post(
+                    "/api/applications/{applicationId}/evaluate-rules",
+                    applicationId
+            ))
+            .andExpect(status().isNotFound())
+            .andExpect(jsonPath("$.errorCode")
+                    .value("APPLICATION_NOT_FOUND"));
+}
     private ApplicationResponse response(
             UUID applicationId,
             String productCode,

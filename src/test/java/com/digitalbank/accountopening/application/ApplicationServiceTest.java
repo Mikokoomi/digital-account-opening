@@ -6,12 +6,19 @@ import com.digitalbank.accountopening.application.dto.ApplicationKycVerification
 import com.digitalbank.accountopening.application.dto.CreateApplicationRequest;
 import com.digitalbank.accountopening.application.dto.UpdateApplicationRequest;
 import com.digitalbank.accountopening.application.enums.ApplicationStatus;
+
+import com.digitalbank.accountopening.application.dto.ApplicationRuleEvaluationResponse;
+import com.digitalbank.accountopening.application.rule.ApplicationRuleCode;
+import com.digitalbank.accountopening.application.rule.RuleEvaluationResult;
+import com.digitalbank.accountopening.application.rule.RuleResult;
+
 import com.digitalbank.accountopening.common.exception.ApplicationNotEditableException;
 import com.digitalbank.accountopening.common.exception.ApplicationNotCancellableException;
 import com.digitalbank.accountopening.common.exception.ApplicationNotFoundException;
 import com.digitalbank.accountopening.common.exception.ApplicationNotSubmittableException;
 import com.digitalbank.accountopening.common.exception.ProductInactiveException;
 import com.digitalbank.accountopening.common.exception.ProductNotFoundException;
+import com.digitalbank.accountopening.common.exception.KycAlreadyVerifiedException;
 import com.digitalbank.accountopening.product.Product;
 import com.digitalbank.accountopening.product.ProductRepository;
 import com.digitalbank.accountopening.integration.cifkyc.CifKycClientException;
@@ -19,6 +26,9 @@ import com.digitalbank.accountopening.integration.cifkyc.CifKycVerificationError
 import com.digitalbank.accountopening.integration.cifkyc.CifKycVerificationException;
 import com.digitalbank.accountopening.integration.cifkyc.CifKycVerificationResult;
 import com.digitalbank.accountopening.integration.cifkyc.CifKycVerificationService;
+
+import com.digitalbank.accountopening.application.rule.ApplicationRuleEvaluationService;
+
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -60,6 +70,9 @@ class ApplicationServiceTest {
     private ApplicationStatusHistoryRepository historyRepository;
 
     @Mock
+    private ApplicationRuleEvaluationService applicationRuleEvaluationService;
+
+    @Mock
     private ProductRepository productRepository;
 
     @Mock
@@ -70,13 +83,14 @@ class ApplicationServiceTest {
     @BeforeEach
     void setUp() {
         applicationService = new ApplicationService(
-                applicationRepository,
-                historyRepository,
-                productRepository,
-                new AccountApplicationMapper(),
-                cifKycVerificationService,
-                Clock.fixed(TEST_INSTANT, ZoneOffset.UTC)
-        );
+        applicationRepository,
+        historyRepository,
+        productRepository,
+        new AccountApplicationMapper(),
+        cifKycVerificationService,
+        applicationRuleEvaluationService,
+        Clock.fixed(TEST_INSTANT, ZoneOffset.UTC)
+);
     }
 
     @Test
@@ -580,6 +594,37 @@ class ApplicationServiceTest {
         verify(historyRepository, never()).save(any());
     }
 
+    @Test
+    void verifyCifKyc_shouldRejectWhenApplicationIsAlreadyVerified() {
+        UUID applicationId = UUID.randomUUID();
+
+        AccountApplication application = application(
+                applicationId,
+                "CUSTOMER-001",
+                "CURRENT_ACCOUNT"
+        );
+
+        application.setKycStatus("VERIFIED");
+        application.setCifVerifiedAt(
+                OffsetDateTime.ofInstant(TEST_INSTANT, ZoneOffset.UTC)
+        );
+
+        when(applicationRepository.findById(applicationId))
+                .thenReturn(Optional.of(application));
+
+        KycAlreadyVerifiedException exception = assertThrows(
+                KycAlreadyVerifiedException.class,
+                () -> applicationService.verifyCifKyc(applicationId)
+        );
+
+    assertEquals(
+            "Application already has a successful KYC verification",
+            exception.getMessage()
+    );
+
+    verifyNoInteractions(cifKycVerificationService);
+    verify(applicationRepository, never()).save(any());
+}
     private CifKycVerificationResult verificationResult(String customerId) {
         return new CifKycVerificationResult(
                 customerId,
@@ -631,5 +676,95 @@ class ApplicationServiceTest {
         application.setCreatedAt(now);
         application.setUpdatedAt(now);
         return application;
+    }
+    @Test
+    void evaluateRules_shouldReturnEligibleWhenAllRulesPass() {
+        UUID applicationId = UUID.randomUUID();
+
+        AccountApplication application = application(
+                applicationId,
+                "CUSTOMER-001",
+                "CURRENT_ACCOUNT"
+        );
+
+        RuleResult productRule = new RuleResult(
+                ApplicationRuleCode.PRODUCT_ACTIVE,
+                true,
+                "Product is active"
+        );
+
+        RuleResult kycRule = new RuleResult(
+                ApplicationRuleCode.KYC_VERIFIED,
+                true,
+                "KYC verification is confirmed"
+        );
+
+        RuleEvaluationResult evaluationResult =
+                RuleEvaluationResult.from(List.of(productRule, kycRule));
+
+        when(applicationRepository.findById(applicationId))
+                .thenReturn(Optional.of(application));
+
+        when(applicationRuleEvaluationService.evaluate(application))
+                .thenReturn(evaluationResult);
+
+        ApplicationRuleEvaluationResponse response =
+                applicationService.evaluateRules(applicationId);
+
+        assertEquals(applicationId, response.applicationId());
+        assertTrue(response.eligible());
+        assertEquals(2, response.ruleResults().size());
+        assertTrue(response.failedRules().isEmpty());
+
+        verify(applicationRuleEvaluationService).evaluate(application);
+        verify(historyRepository, never()).save(any());
+    }
+    @Test
+    void evaluateRules_shouldReturnNotEligibleWhenKycRuleFails() {
+        UUID applicationId = UUID.randomUUID();
+
+        AccountApplication application = application(
+                applicationId,
+                "CUSTOMER-001",
+                "CURRENT_ACCOUNT"
+        );
+
+        RuleResult productRule = new RuleResult(
+                ApplicationRuleCode.PRODUCT_ACTIVE,
+                true,
+                "Product is active"
+        );
+
+        RuleResult kycRule = new RuleResult(
+                ApplicationRuleCode.KYC_VERIFIED,
+                false,
+                "KYC has not been verified"
+        );
+
+        RuleEvaluationResult evaluationResult =
+                RuleEvaluationResult.from(List.of(productRule, kycRule));
+
+        when(applicationRepository.findById(applicationId))
+                .thenReturn(Optional.of(application));
+
+        when(applicationRuleEvaluationService.evaluate(application))
+                .thenReturn(evaluationResult);
+
+        ApplicationRuleEvaluationResponse response =
+                applicationService.evaluateRules(applicationId);
+
+        assertEquals(applicationId, response.applicationId());
+        assertEquals(false, response.eligible());
+
+        assertEquals(2, response.ruleResults().size());
+        assertEquals(1, response.failedRules().size());
+
+        assertEquals(
+                ApplicationRuleCode.KYC_VERIFIED,
+                response.failedRules().getFirst().ruleCode()
+        );
+
+        verify(applicationRuleEvaluationService).evaluate(application);
+        verify(historyRepository, never()).save(any());
     }
 }

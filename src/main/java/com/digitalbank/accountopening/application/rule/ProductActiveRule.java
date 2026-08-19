@@ -5,8 +5,10 @@ import com.digitalbank.accountopening.common.exception.ProductNotFoundException;
 import com.digitalbank.accountopening.product.Product;
 import com.digitalbank.accountopening.product.ProductRepository;
 import org.springframework.stereotype.Component;
+import org.springframework.core.annotation.Order;
 
 @Component
+@Order(1)
 public class ProductActiveRule implements ApplicationRule {
 
     private final ProductRepository productRepository;

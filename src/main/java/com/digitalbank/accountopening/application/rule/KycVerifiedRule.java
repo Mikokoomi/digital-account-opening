@@ -1,9 +1,10 @@
 package com.digitalbank.accountopening.application.rule;
-
+import org.springframework.core.annotation.Order;
 import com.digitalbank.accountopening.application.AccountApplication;
 import org.springframework.stereotype.Component;
 
 @Component
+@Order(2)
 public class KycVerifiedRule implements ApplicationRule {
 
     private static final String VERIFIED = "VERIFIED";
