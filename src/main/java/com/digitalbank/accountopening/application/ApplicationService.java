@@ -14,6 +14,7 @@ import com.digitalbank.accountopening.common.exception.ApplicationNotEditableExc
 import com.digitalbank.accountopening.common.exception.ApplicationNotCancellableException;
 import com.digitalbank.accountopening.common.exception.ApplicationNotFoundException;
 import com.digitalbank.accountopening.common.exception.ApplicationNotSubmittableException;
+import com.digitalbank.accountopening.common.exception.ApplicationKycCheckNotAllowedException;
 import com.digitalbank.accountopening.common.exception.ApplicationRuleEvaluationNotAllowedException;
 import com.digitalbank.accountopening.common.exception.ProductInactiveException;
 import com.digitalbank.accountopening.common.exception.ProductNotFoundException;
@@ -26,6 +27,7 @@ import org.springframework.transaction.annotation.Transactional;
 import com.digitalbank.accountopening.common.exception.KycAlreadyVerifiedException;
 
 import java.time.Clock;
+import java.time.LocalDate;
 import java.time.OffsetDateTime;
 import java.util.EnumSet;
 import java.util.List;
@@ -35,8 +37,10 @@ import java.util.UUID;
 @Service
 public class ApplicationService {
 
+    private static final Set<ApplicationStatus> KYC_CHECK_ALLOWED_STATUSES =
+            EnumSet.of(ApplicationStatus.SUBMITTED);
     private static final Set<ApplicationStatus> RULE_EVALUATION_ALLOWED_STATUSES =
-            EnumSet.of(ApplicationStatus.DRAFT, ApplicationStatus.SUBMITTED);
+            EnumSet.of(ApplicationStatus.SUBMITTED);
 
     private final AccountApplicationRepository applicationRepository;
     private final ApplicationStatusHistoryRepository historyRepository;
@@ -129,7 +133,7 @@ public class ApplicationService {
         Product product = findActiveProduct(application.getProductCode());
         ApplicationStatus oldStatus = application.getStatus();
         application.setStatus(ApplicationStatus.SUBMITTED);
-        application.setSubmittedAt(OffsetDateTime.now());
+        application.setSubmittedAt(OffsetDateTime.now(clock));
 
         ApplicationStatusHistory history = new ApplicationStatusHistory();
         history.setApplication(application);
@@ -151,7 +155,7 @@ public class ApplicationService {
         }
 
         application.setStatus(ApplicationStatus.CANCELLED);
-        application.setCancelledAt(OffsetDateTime.now());
+        application.setCancelledAt(OffsetDateTime.now(clock));
 
         ApplicationStatusHistory history = new ApplicationStatusHistory();
         history.setApplication(application);
@@ -178,19 +182,23 @@ public class ApplicationService {
 
     @Transactional
     public ApplicationKycVerificationResponse verifyCifKyc(UUID applicationId) {
-    AccountApplication application = findApplication(applicationId);
+        AccountApplication application = findApplication(applicationId);
 
-    if ("VERIFIED".equals(application.getKycStatus())
-            && application.getCifVerifiedAt() != null) {
-        throw new KycAlreadyVerifiedException();
-    }
+        if (!KYC_CHECK_ALLOWED_STATUSES.contains(application.getStatus())) {
+            throw new ApplicationKycCheckNotAllowedException(application.getStatus());
+        }
 
-    CifKycVerificationResult verificationResult = cifKycVerificationService.verify(
-            application.getCustomerId()
-    );
+        if (hasCurrentKycVerification(application)) {
+            throw new KycAlreadyVerifiedException();
+        }
+
+        CifKycVerificationResult verificationResult = cifKycVerificationService.verify(
+                application.getCustomerId()
+        );
 
         application.setKycStatus(verificationResult.kycStatus());
         application.setCifVerifiedAt(OffsetDateTime.now(clock));
+        application.setKycExpiryDate(verificationResult.kycExpiryDate());
         applicationRepository.save(application);
 
         return new ApplicationKycVerificationResponse(
@@ -239,5 +247,12 @@ public class ApplicationService {
         return product;
     }
 
+    private boolean hasCurrentKycVerification(AccountApplication application) {
+        LocalDate kycExpiryDate = application.getKycExpiryDate();
+        return "VERIFIED".equals(application.getKycStatus())
+                && application.getCifVerifiedAt() != null
+                && kycExpiryDate != null
+                && !kycExpiryDate.isBefore(LocalDate.now(clock));
+    }
 
 }

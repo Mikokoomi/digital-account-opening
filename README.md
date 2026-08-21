@@ -21,15 +21,13 @@ Project tập trung vào phần backend, quản lý hồ sơ mở tài khoản, 
 ```text
 Khách hàng hiện hữu
 → Chọn sản phẩm tài khoản
-→ Tạo hồ sơ mở tài khoản
+→ Tạo hồ sơ (`DRAFT`)
+→ Submit hồ sơ (`SUBMITTED`)
 → Kiểm tra CIF/KYC
-→ Kiểm tra điều kiện sản phẩm
-→ Tự động duyệt hoặc chuyển nhân viên xử lý
-→ Gọi Core Banking giả lập để tạo tài khoản
-→ Gửi thông báo và lưu audit log
+→ Đánh giá Business Rules
 ```
 
-Hiện tại project đã hoàn thành phần Account Application và tích hợp CIF/KYC: tạo, xem, cập nhật, submit, hủy hồ sơ, xem lịch sử trạng thái và kiểm tra điều kiện CIF/KYC qua mock service độc lập. Approval và Core Banking sẽ được thực hiện ở các tuần tiếp theo.
+Phạm vi đã hoàn thành đến hết Tuần 3: Account Application, CIF/KYC integration và Business Rules. Approval, Core Banking, retry, notification và audit log thuộc các tuần sau.
 
 ## Tiến độ hiện tại
 
@@ -66,6 +64,16 @@ Hiện tại project đã hoàn thành phần Account Application và tích hợ
 - Xử lý upstream response thiếu dữ liệu như một integration/data-contract failure
 - Hoàn thành **69 automated tests**, không có failure, error hoặc skipped test
 
+### Tuần 3 — Business Rules
+
+- Thiết kế `ApplicationRule`, `RuleResult`, `RuleEvaluationResult` và `ApplicationRuleEvaluationService`.
+- Implement `ProductActiveRule` và `KycVerifiedRule` theo thứ tự deterministic.
+- Tạo endpoint `POST /api/applications/{applicationId}/evaluate-rules` trả `eligible`, `ruleResults` và `failedRules`.
+- KYC check và rule evaluation chỉ được chạy khi hồ sơ ở `SUBMITTED`.
+- Persist snapshot KYC gồm `kycStatus`, `cifVerifiedAt` và `kycExpiryDate`.
+- `KycVerifiedRule` chỉ pass khi KYC đã verified, có timestamp và chưa hết hạn.
+- Hoàn thành **99 automated tests**, không có failure, error hoặc skipped test.
+
 ## Các API hiện có
 
 | Method | Endpoint | Chức năng |
@@ -80,7 +88,8 @@ Hiện tại project đã hoàn thành phần Account Application và tích hợ
 | PATCH | `/api/applications/{applicationId}/submit` | Submit hồ sơ từ `DRAFT` sang `SUBMITTED` |
 | PATCH | `/api/applications/{applicationId}/cancel` | Hủy hồ sơ `DRAFT` hoặc `SUBMITTED` |
 | GET | `/api/applications/{applicationId}/history` | Xem lịch sử thay đổi trạng thái của hồ sơ |
-| POST | `/api/applications/{applicationId}/kyc-check` | Kiểm tra điều kiện CIF/KYC của khách hàng |
+| POST | `/api/applications/{applicationId}/kyc-check` | Kiểm tra CIF/KYC cho hồ sơ `SUBMITTED` |
+| POST | `/api/applications/{applicationId}/evaluate-rules` | Đánh giá eligibility cho hồ sơ `SUBMITTED` |
 | GET | `/v3/api-docs` | Xem OpenAPI specification |
 | GET | `/swagger-ui.html` | Mở Swagger UI |
 
@@ -96,7 +105,7 @@ Các trạng thái trong enum `ApplicationStatus`:
 - `CANCELLED`: Hồ sơ đã bị hủy
 - `FAILED`: Hồ sơ gặp lỗi trong quá trình xử lý
 
-Hiện tại project sử dụng các luồng `DRAFT → SUBMITTED`, `DRAFT → CANCELLED` và `SUBMITTED → CANCELLED`. KYC check chỉ kiểm tra điều kiện và không thay đổi trạng thái hoặc tạo status history.
+Hiện tại project sử dụng các luồng `DRAFT → SUBMITTED`, `DRAFT → CANCELLED` và `SUBMITTED → CANCELLED`. KYC check và rule evaluation chỉ chạy ở `SUBMITTED`; cả hai không thay đổi status hoặc tạo status history. `evaluate-rules` chỉ đánh giá eligibility, chưa tự động approve, reject hoặc điều phối workflow.
 
 ## Kết quả Tuần 2
 
@@ -120,6 +129,7 @@ Tuần 2 đã hoàn thành Account Application và CIF/KYC Integration:
 - `V2__insert_sample_products.sql`: Thêm dữ liệu sản phẩm mẫu.
 - `V3__create_account_applications.sql`: Tạo bảng hồ sơ mở tài khoản và liên kết sản phẩm.
 - `V4__create_application_status_history.sql`: Tạo bảng lưu lịch sử thay đổi trạng thái hồ sơ.
+- `V5__add_kyc_expiry_date_to_account_applications.sql`: Thêm snapshot ngày hết hạn KYC.
 
 ## Các bảng chính hiện tại
 
@@ -209,13 +219,9 @@ http://localhost:8080/swagger-ui/index.html
 - Quản lý hồ sơ mở tài khoản
 - Kiểm tra sản phẩm
 - CIF/KYC Mock Service
-- Approval workflow
-- Core Banking Mock Service
-- Retry
-- Notification
-- Audit log
+- Business Rules: `PRODUCT_ACTIVE` và `KYC_VERIFIED`
 
-CIF/KYC Integration đã hoàn thành. Approval, Core Banking, retry, notification và audit log thuộc phạm vi project nhưng chưa được triển khai ở giai đoạn hiện tại.
+Approval, Core Banking, retry, notification và audit log thuộc phạm vi project nhưng chưa được triển khai ở giai đoạn hiện tại.
 
 ### Không thực hiện
 
@@ -251,7 +257,7 @@ Khi tạo hoặc submit hồ sơ, thay đổi trạng thái và lịch sử ph�
 
 - **Tuần 1 — Nghiệp vụ và khởi tạo:** tìm hiểu nghiệp vụ, thiết kế luồng/DB/API, khởi tạo Spring Boot, PostgreSQL, Flyway và Product API cơ bản.
 - **Tuần 2 — Account Application + CIF/KYC Integration:** quản lý hồ sơ, migration, trạng thái/lịch sử, CIF/KYC Mock Service, RestClient, verification, endpoint KYC check, error handling và automated tests.
-- **Tuần 3 — Business Rules:** kiểm tra điều kiện sản phẩm và các quy tắc nghiệp vụ mở tài khoản.
+- **Tuần 3 — Business Rules:** hoàn thành architecture rule, `PRODUCT_ACTIVE`, `KYC_VERIFIED`, KYC expiry snapshot và endpoint evaluate eligibility.
 - **Tuần 4 — Workflow trạng thái:** hoàn thiện luồng trạng thái và điều phối xử lý hồ sơ.
 - **Tuần 5 — Nhân viên xét duyệt:** xây dựng luồng nhân viên review, approve và reject.
 - **Tuần 6 — Core Banking Mock Service:** tích hợp service giả lập để tạo tài khoản ngân hàng.

@@ -10,6 +10,7 @@ import com.digitalbank.accountopening.common.exception.ApplicationNotCancellable
 import com.digitalbank.accountopening.common.exception.ApplicationNotEditableException;
 import com.digitalbank.accountopening.common.exception.ApplicationNotFoundException;
 import com.digitalbank.accountopening.common.exception.ApplicationNotSubmittableException;
+import com.digitalbank.accountopening.common.exception.ApplicationKycCheckNotAllowedException;
 import com.digitalbank.accountopening.common.exception.ApplicationRuleEvaluationNotAllowedException;
 import com.digitalbank.accountopening.common.exception.KycAlreadyVerifiedException;
 import com.digitalbank.accountopening.integration.cifkyc.CifKycClientException;
@@ -333,7 +334,7 @@ class AccountApplicationControllerTest {
                 .andExpect(jsonPath("$.message").value("CIF/KYC service is unavailable"));
     }
     @Test
-        void verifyCifKyc_shouldReturnConflictWhenAlreadyVerified() throws Exception {
+    void verifyCifKyc_shouldReturnConflictWhenAlreadyVerified() throws Exception {
         UUID applicationId = UUID.randomUUID();
 
         when(applicationService.verifyCifKyc(applicationId))
@@ -346,6 +347,48 @@ class AccountApplicationControllerTest {
                 .andExpect(jsonPath("$.message")
                         .value("Application already has a successful KYC verification"));
         }
+
+    @Test
+    void verifyCifKyc_shouldReturnConflictWhenApplicationStatusIsNotSubmitted() throws Exception {
+        UUID applicationId = UUID.randomUUID();
+        when(applicationService.verifyCifKyc(applicationId)).thenThrow(
+                new ApplicationKycCheckNotAllowedException(ApplicationStatus.DRAFT)
+        );
+
+        mockMvc.perform(post("/api/applications/{applicationId}/kyc-check", applicationId))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.success").value(false))
+                .andExpect(jsonPath("$.errorCode").value("APPLICATION_KYC_CHECK_NOT_ALLOWED"))
+                .andExpect(jsonPath("$.message")
+                        .value("KYC check is not allowed for application status: DRAFT"));
+    }
+
+    @Test
+    void getApplication_shouldIncludePersistedKycExpiryDate() throws Exception {
+        UUID applicationId = UUID.randomUUID();
+        OffsetDateTime verifiedAt = OffsetDateTime.parse("2026-08-21T05:00:00Z");
+        when(applicationService.getApplication(applicationId)).thenReturn(new ApplicationResponse(
+                applicationId,
+                "CUS001",
+                "CURRENT_ACCOUNT",
+                "Current Account",
+                ApplicationStatus.SUBMITTED,
+                "VERIFIED",
+                verifiedAt,
+                LocalDate.of(2027, 12, 31),
+                null,
+                null,
+                null,
+                verifiedAt,
+                verifiedAt
+        ));
+
+        mockMvc.perform(get("/api/applications/{applicationId}", applicationId))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.kycStatus").value("VERIFIED"))
+                .andExpect(jsonPath("$.data.cifVerifiedAt").value("2026-08-21T05:00:00Z"))
+                .andExpect(jsonPath("$.data.kycExpiryDate").value("2027-12-31"));
+    }
 
         @Test
         void evaluateRules_shouldReturnEligibleResult() throws Exception {
@@ -483,6 +526,7 @@ void evaluateRules_shouldReturnNotFoundWhenApplicationDoesNotExist()
                 productCode,
                 "Test Product",
                 status,
+                null,
                 null,
                 null,
                 null,

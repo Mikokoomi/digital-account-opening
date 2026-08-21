@@ -79,6 +79,17 @@ public class GlobalExceptionHandler {
         );
     }
 
+    @ExceptionHandler(ApplicationKycCheckNotAllowedException.class)
+    public ResponseEntity<ErrorResponse> handleApplicationKycCheckNotAllowed(
+            ApplicationKycCheckNotAllowedException exception
+    ) {
+        return error(
+                HttpStatus.CONFLICT,
+                exception.getMessage(),
+                "APPLICATION_KYC_CHECK_NOT_ALLOWED"
+        );
+    }
+
     @ExceptionHandler(KycAlreadyVerifiedException.class)
     public ResponseEntity<ErrorResponse> handleKycAlreadyVerified(
                 KycAlreadyVerifiedException exception

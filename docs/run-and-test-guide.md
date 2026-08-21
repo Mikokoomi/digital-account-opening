@@ -242,7 +242,7 @@ cd C:\Users\Admin\account-opening
 **Kết quả mong đợi hiện tại:**
 
 ```text
-Tests run: 69
+Tests run: 99
 Failures: 0
 Errors: 0
 Skipped: 0
@@ -475,6 +475,16 @@ Invoke-RestMethod "http://localhost:8080/api/applications/$applicationId" |
 POST http://localhost:8080/api/applications/{applicationId}/kyc-check
 ```
 
+KYC check chỉ được phép khi application đã ở `SUBMITTED`. Sau khi tạo application ở phần 15, submit trước:
+
+```powershell
+Invoke-RestMethod -Method Patch `
+    -Uri "http://localhost:8080/api/applications/$applicationId/submit" |
+    ConvertTo-Json -Depth 5
+```
+
+Nếu gọi KYC check khi application còn `DRAFT`, đã `CANCELLED` hoặc ở trạng thái khác, API trả HTTP `409` với `errorCode=APPLICATION_KYC_CHECK_NOT_ALLOWED`.
+
 Không gửi request body và không gửi `customerId` trong URL. Account Opening dùng `applicationId` để tự tìm customerId đã lưu:
 
 ```text
@@ -503,7 +513,7 @@ Với customer hợp lệ, response data có `eligible`, `customerStatus`, `kycS
 
 ## 18. Test các case CIF/KYC
 
-Tạo một application riêng cho từng customer bằng endpoint ở phần 15, sau đó gọi KYC check với `applicationId` tương ứng.
+Tạo và submit một application riêng cho từng customer bằng endpoint ở phần 15 và lệnh submit tại phần 17, sau đó gọi KYC check với `applicationId` tương ứng.
 
 | Customer | Expected | Giải thích |
 |---|---|---|
@@ -563,7 +573,7 @@ KHÔNG đổi ApplicationStatus
 KHÔNG tạo status history mới
 ```
 
-Ví dụ application đang `DRAFT`, sau KYC PASS vẫn là `DRAFT`.
+Ví dụ application đang `SUBMITTED`, sau KYC PASS vẫn là `SUBMITTED`. KYC PASS đồng thời lưu `kycStatus`, `cifVerifiedAt` và `kycExpiryDate` để dùng cho rule evaluation.
 
 **Vì sao?** `ApplicationStatus` là lifecycle của hồ sơ: `DRAFT`, `SUBMITTED`, `CANCELLED`... Còn `KYC VERIFIED` là kết quả kiểm tra dữ liệu customer. Hai khái niệm khác nhau và chưa được trộn vào nhau ở giai đoạn hiện tại.
 
@@ -577,11 +587,11 @@ Invoke-RestMethod "http://localhost:8080/api/applications/$applicationId/history
     ConvertTo-Json -Depth 6
 ```
 
-Với application mới tạo chỉ KYC check, history vẫn chỉ có bản ghi khởi tạo `null → DRAFT`.
+Với application đã submit và KYC check, history chỉ có hai bản ghi `null → DRAFT` và `DRAFT → SUBMITTED`.
 
 ## 21. Week 3: evaluate Business Rules
 
-Sau khi tạo application, endpoint sau đánh giá các rule hiện đang active theo thứ tự cố định `PRODUCT_ACTIVE` rồi `KYC_VERIFIED`:
+Sau khi application đã `SUBMITTED` và KYC check thành công, endpoint sau đánh giá các rule hiện đang active theo thứ tự cố định `PRODUCT_ACTIVE` rồi `KYC_VERIFIED`:
 
 ```http
 POST http://localhost:8080/api/applications/{applicationId}/evaluate-rules
@@ -595,7 +605,7 @@ Invoke-RestMethod -Method Post `
     ConvertTo-Json -Depth 6
 ```
 
-Trước khi KYC pass, response vẫn là HTTP `200` nhưng `eligible=false`, với `KYC_VERIFIED` xuất hiện trong `failedRules`:
+Khi KYC snapshot chưa hợp lệ hoặc đã hết hạn, response là HTTP `200` nhưng `eligible=false`, với `KYC_VERIFIED` xuất hiện trong `failedRules`:
 
 ```json
 {
@@ -619,22 +629,22 @@ Sau KYC pass và product active, response là HTTP `200`, `eligible=true` và `f
 }
 ```
 
-Evaluation chỉ được phép khi application có status `DRAFT` hoặc `SUBMITTED`. Các status như `UNDER_REVIEW`, `APPROVED`, `REJECTED`, `CANCELLED` và `FAILED` nhận HTTP `409` với `errorCode=APPLICATION_RULE_EVALUATION_NOT_ALLOWED`. Endpoint này chỉ đọc dữ liệu: gọi nhiều lần không đổi status hoặc tạo history.
+Evaluation chỉ được phép khi application có status `SUBMITTED`. Các status như `DRAFT`, `UNDER_REVIEW`, `APPROVED`, `REJECTED`, `CANCELLED` và `FAILED` nhận HTTP `409` với `errorCode=APPLICATION_RULE_EVALUATION_NOT_ALLOWED`. Endpoint này chỉ đọc dữ liệu: gọi nhiều lần không đổi status hoặc tạo history.
 
-KYC check chỉ cần chạy một lần thành công. Nếu application đã có `kycStatus=VERIFIED` và `cifVerifiedAt`, gọi lại:
+KYC check chỉ cần chạy một lần khi snapshot còn hiệu lực. Nếu application đã có `kycStatus=VERIFIED`, `cifVerifiedAt` và `kycExpiryDate` bằng hoặc sau ngày hiện tại, gọi lại:
 
 ```http
 POST /api/applications/{applicationId}/kyc-check
 ```
 
-trả HTTP `409` với `errorCode=KYC_ALREADY_VERIFIED` và không gọi CIF/KYC Mock Service lại.
+trả HTTP `409` với `errorCode=KYC_ALREADY_VERIFIED` và không gọi CIF/KYC Mock Service lại. Khi `kycExpiryDate` đã qua, KYC check được phép chạy lại để refresh snapshot.
 
 ### Thứ tự test ngắn trong Swagger
 
 1. Tạo application với `CUS001` và một product active.
-2. Gọi `evaluate-rules` trước KYC, xác nhận `eligible=false`.
-3. Gọi `kyc-check`, xác nhận KYC pass.
-4. Gọi `evaluate-rules` sau KYC, xác nhận `eligible=true`.
+2. Submit application, xác nhận status `SUBMITTED`.
+3. Gọi `kyc-check`, xác nhận KYC pass và snapshot expiry được lưu.
+4. Gọi `evaluate-rules`, xác nhận `eligible=true`.
 5. Gọi `kyc-check` lần hai, xác nhận HTTP `409 KYC_ALREADY_VERIFIED`.
 
 ## 22. Một số lỗi thường gặp

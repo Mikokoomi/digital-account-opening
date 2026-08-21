@@ -15,6 +15,7 @@ import lombok.Getter;
 import lombok.NoArgsConstructor;
 import lombok.Setter;
 
+import java.time.LocalDate;
 import java.time.OffsetDateTime;
 import java.util.UUID;
 
@@ -45,6 +46,9 @@ public class AccountApplication {
 
     @Column(name = "cif_verified_at")
     private OffsetDateTime cifVerifiedAt;
+
+    @Column(name = "kyc_expiry_date")
+    private LocalDate kycExpiryDate;
 
     @Column(name = "reject_reason", length = 500)
     private String rejectReason;

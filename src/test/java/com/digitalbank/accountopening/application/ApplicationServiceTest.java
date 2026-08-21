@@ -16,6 +16,7 @@ import com.digitalbank.accountopening.common.exception.ApplicationNotEditableExc
 import com.digitalbank.accountopening.common.exception.ApplicationNotCancellableException;
 import com.digitalbank.accountopening.common.exception.ApplicationNotFoundException;
 import com.digitalbank.accountopening.common.exception.ApplicationNotSubmittableException;
+import com.digitalbank.accountopening.common.exception.ApplicationKycCheckNotAllowedException;
 import com.digitalbank.accountopening.common.exception.ApplicationRuleEvaluationNotAllowedException;
 import com.digitalbank.accountopening.common.exception.ProductInactiveException;
 import com.digitalbank.accountopening.common.exception.ProductNotFoundException;
@@ -285,9 +286,9 @@ class ApplicationServiceTest {
         ArgumentCaptor<ApplicationStatusHistory> historyCaptor = ArgumentCaptor.forClass(ApplicationStatusHistory.class);
         verify(historyRepository).save(historyCaptor.capture());
         assertEquals(ApplicationStatus.SUBMITTED, application.getStatus());
-        assertNotNull(application.getSubmittedAt());
+        assertEquals(OffsetDateTime.ofInstant(TEST_INSTANT, ZoneOffset.UTC), application.getSubmittedAt());
         assertEquals(ApplicationStatus.SUBMITTED, result.status());
-        assertNotNull(result.submittedAt());
+        assertEquals(OffsetDateTime.ofInstant(TEST_INSTANT, ZoneOffset.UTC), result.submittedAt());
         assertEquals(application, historyCaptor.getValue().getApplication());
         assertEquals(ApplicationStatus.DRAFT, historyCaptor.getValue().getFromStatus());
         assertEquals(ApplicationStatus.SUBMITTED, historyCaptor.getValue().getToStatus());
@@ -368,9 +369,9 @@ class ApplicationServiceTest {
         ArgumentCaptor<ApplicationStatusHistory> historyCaptor = ArgumentCaptor.forClass(ApplicationStatusHistory.class);
         verify(historyRepository).save(historyCaptor.capture());
         assertEquals(ApplicationStatus.CANCELLED, application.getStatus());
-        assertNotNull(application.getCancelledAt());
+        assertEquals(OffsetDateTime.ofInstant(TEST_INSTANT, ZoneOffset.UTC), application.getCancelledAt());
         assertEquals(ApplicationStatus.CANCELLED, result.status());
-        assertNotNull(result.cancelledAt());
+        assertEquals(OffsetDateTime.ofInstant(TEST_INSTANT, ZoneOffset.UTC), result.cancelledAt());
         assertEquals(ApplicationStatus.DRAFT, historyCaptor.getValue().getFromStatus());
         assertEquals(ApplicationStatus.CANCELLED, historyCaptor.getValue().getToStatus());
         assertEquals("CUSTOMER-001", historyCaptor.getValue().getChangedBy());
@@ -393,7 +394,7 @@ class ApplicationServiceTest {
         verify(historyRepository).save(historyCaptor.capture());
         assertEquals(ApplicationStatus.CANCELLED, application.getStatus());
         assertEquals(submittedAt, application.getSubmittedAt());
-        assertNotNull(application.getCancelledAt());
+        assertEquals(OffsetDateTime.ofInstant(TEST_INSTANT, ZoneOffset.UTC), application.getCancelledAt());
         assertEquals(ApplicationStatus.SUBMITTED, historyCaptor.getValue().getFromStatus());
         assertEquals(ApplicationStatus.CANCELLED, historyCaptor.getValue().getToStatus());
     }
@@ -499,6 +500,7 @@ class ApplicationServiceTest {
     void verifyCifKyc_shouldUseCustomerIdFromApplicationAndReturnResult() {
         UUID applicationId = UUID.randomUUID();
         AccountApplication application = application(applicationId, "CUS001", "CURRENT_ACCOUNT");
+        application.setStatus(ApplicationStatus.SUBMITTED);
         CifKycVerificationResult verificationResult = verificationResult("CUS001");
         when(applicationRepository.findById(applicationId)).thenReturn(Optional.of(application));
         when(cifKycVerificationService.verify("CUS001")).thenReturn(verificationResult);
@@ -511,9 +513,10 @@ class ApplicationServiceTest {
         assertEquals("ACTIVE", result.customerStatus());
         assertEquals("VERIFIED", result.kycStatus());
         assertEquals(LocalDate.of(2027, 12, 31), result.kycExpiryDate());
-        assertEquals(ApplicationStatus.DRAFT, application.getStatus());
+        assertEquals(ApplicationStatus.SUBMITTED, application.getStatus());
         assertEquals("VERIFIED", application.getKycStatus());
         assertEquals(OffsetDateTime.ofInstant(TEST_INSTANT, ZoneOffset.UTC), application.getCifVerifiedAt());
+        assertEquals(LocalDate.of(2027, 12, 31), application.getKycExpiryDate());
         verify(cifKycVerificationService).verify("CUS001");
         verify(applicationRepository).save(application);
         verify(historyRepository, never()).save(any());
@@ -556,6 +559,7 @@ class ApplicationServiceTest {
     void verifyCifKyc_shouldPropagateIntegrationFailure() {
         UUID applicationId = UUID.randomUUID();
         AccountApplication application = application(applicationId, "CUS001", "CURRENT_ACCOUNT");
+        application.setStatus(ApplicationStatus.SUBMITTED);
         CifKycClientException clientException = new CifKycClientException(
                 "CIF/KYC service is unavailable"
         );
@@ -568,9 +572,10 @@ class ApplicationServiceTest {
         );
 
         assertSame(clientException, thrownException);
-        assertEquals(ApplicationStatus.DRAFT, application.getStatus());
+        assertEquals(ApplicationStatus.SUBMITTED, application.getStatus());
         assertNull(application.getKycStatus());
         assertNull(application.getCifVerifiedAt());
+        assertNull(application.getKycExpiryDate());
         verify(applicationRepository, never()).save(any());
         verify(historyRepository, never()).save(any());
     }
@@ -578,6 +583,7 @@ class ApplicationServiceTest {
     private void assertVerificationFailure(CifKycVerificationErrorCode errorCode) {
         UUID applicationId = UUID.randomUUID();
         AccountApplication application = application(applicationId, "CUS001", "CURRENT_ACCOUNT");
+        application.setStatus(ApplicationStatus.SUBMITTED);
         CifKycVerificationException verificationException = new CifKycVerificationException(errorCode);
         when(applicationRepository.findById(applicationId)).thenReturn(Optional.of(application));
         when(cifKycVerificationService.verify("CUS001")).thenThrow(verificationException);
@@ -588,9 +594,10 @@ class ApplicationServiceTest {
         );
 
         assertSame(verificationException, thrownException);
-        assertEquals(ApplicationStatus.DRAFT, application.getStatus());
+        assertEquals(ApplicationStatus.SUBMITTED, application.getStatus());
         assertNull(application.getKycStatus());
         assertNull(application.getCifVerifiedAt());
+        assertNull(application.getKycExpiryDate());
         verify(applicationRepository, never()).save(any());
         verify(historyRepository, never()).save(any());
     }
@@ -609,6 +616,8 @@ class ApplicationServiceTest {
         application.setCifVerifiedAt(
                 OffsetDateTime.ofInstant(TEST_INSTANT, ZoneOffset.UTC)
         );
+        application.setKycExpiryDate(LocalDate.of(2027, 12, 31));
+        application.setStatus(ApplicationStatus.SUBMITTED);
 
         when(applicationRepository.findById(applicationId))
                 .thenReturn(Optional.of(application));
@@ -626,6 +635,70 @@ class ApplicationServiceTest {
     verifyNoInteractions(cifKycVerificationService);
     verify(applicationRepository, never()).save(any());
 }
+
+    @Test
+    void verifyCifKyc_shouldRejectStatusesOutsideSubmitted() {
+        for (ApplicationStatus status : List.of(
+                ApplicationStatus.DRAFT,
+                ApplicationStatus.UNDER_REVIEW,
+                ApplicationStatus.APPROVED,
+                ApplicationStatus.REJECTED,
+                ApplicationStatus.CANCELLED,
+                ApplicationStatus.FAILED
+        )) {
+            UUID applicationId = UUID.randomUUID();
+            AccountApplication application = application(applicationId, "CUSTOMER-001", "CURRENT_ACCOUNT");
+            application.setStatus(status);
+            when(applicationRepository.findById(applicationId)).thenReturn(Optional.of(application));
+
+            ApplicationKycCheckNotAllowedException exception = assertThrows(
+                    ApplicationKycCheckNotAllowedException.class,
+                    () -> applicationService.verifyCifKyc(applicationId)
+            );
+
+            assertEquals("KYC check is not allowed for application status: " + status, exception.getMessage());
+        }
+
+        verifyNoInteractions(cifKycVerificationService);
+        verify(applicationRepository, never()).save(any());
+        verify(historyRepository, never()).save(any());
+    }
+
+    @Test
+    void verifyCifKyc_shouldTreatExpiryTodayAsAlreadyVerified() {
+        UUID applicationId = UUID.randomUUID();
+        AccountApplication application = application(applicationId, "CUSTOMER-001", "CURRENT_ACCOUNT");
+        application.setStatus(ApplicationStatus.SUBMITTED);
+        application.setKycStatus("VERIFIED");
+        application.setCifVerifiedAt(OffsetDateTime.ofInstant(TEST_INSTANT, ZoneOffset.UTC));
+        application.setKycExpiryDate(LocalDate.of(2026, 8, 12));
+        when(applicationRepository.findById(applicationId)).thenReturn(Optional.of(application));
+
+        assertThrows(KycAlreadyVerifiedException.class, () -> applicationService.verifyCifKyc(applicationId));
+
+        verifyNoInteractions(cifKycVerificationService);
+        verify(applicationRepository, never()).save(any());
+    }
+
+    @Test
+    void verifyCifKyc_shouldAllowExpiredVerificationAndRefreshSnapshot() {
+        UUID applicationId = UUID.randomUUID();
+        AccountApplication application = application(applicationId, "CUSTOMER-001", "CURRENT_ACCOUNT");
+        application.setStatus(ApplicationStatus.SUBMITTED);
+        application.setKycStatus("VERIFIED");
+        application.setCifVerifiedAt(OffsetDateTime.parse("2026-08-01T05:00:00Z"));
+        application.setKycExpiryDate(LocalDate.of(2026, 8, 11));
+        when(applicationRepository.findById(applicationId)).thenReturn(Optional.of(application));
+        when(cifKycVerificationService.verify("CUSTOMER-001"))
+                .thenReturn(verificationResult("CUSTOMER-001"));
+
+        applicationService.verifyCifKyc(applicationId);
+
+        assertEquals(OffsetDateTime.ofInstant(TEST_INSTANT, ZoneOffset.UTC), application.getCifVerifiedAt());
+        assertEquals(LocalDate.of(2027, 12, 31), application.getKycExpiryDate());
+        verify(cifKycVerificationService).verify("CUSTOMER-001");
+        verify(applicationRepository).save(application);
+    }
     private CifKycVerificationResult verificationResult(String customerId) {
         return new CifKycVerificationResult(
                 customerId,
@@ -687,6 +760,7 @@ class ApplicationServiceTest {
                 "CUSTOMER-001",
                 "CURRENT_ACCOUNT"
         );
+        application.setStatus(ApplicationStatus.SUBMITTED);
 
         RuleResult productRule = new RuleResult(
                 ApplicationRuleCode.PRODUCT_ACTIVE,
@@ -730,6 +804,7 @@ class ApplicationServiceTest {
                 "CUSTOMER-001",
                 "CURRENT_ACCOUNT"
         );
+        application.setStatus(ApplicationStatus.SUBMITTED);
 
         RuleResult productRule = new RuleResult(
                 ApplicationRuleCode.PRODUCT_ACTIVE,
@@ -794,8 +869,9 @@ class ApplicationServiceTest {
     }
 
     @Test
-    void evaluateRules_shouldRejectStatusesOutsideDraftAndSubmitted() {
+    void evaluateRules_shouldRejectStatusesOutsideSubmitted() {
         for (ApplicationStatus status : List.of(
+                ApplicationStatus.DRAFT,
                 ApplicationStatus.UNDER_REVIEW,
                 ApplicationStatus.APPROVED,
                 ApplicationStatus.REJECTED,
