@@ -1,5 +1,9 @@
 package com.digitalbank.accountopening.application;
 
+import com.digitalbank.accountopening.application.dto.ApplicationRuleEvaluationResponse;
+import com.digitalbank.accountopening.application.rule.ApplicationRuleEvaluationService;
+import com.digitalbank.accountopening.application.rule.RuleEvaluationResult;
+
 import com.digitalbank.accountopening.application.dto.ApplicationResponse;
 import com.digitalbank.accountopening.application.dto.ApplicationHistoryResponse;
 import com.digitalbank.accountopening.application.dto.ApplicationKycVerificationResponse;
@@ -10,6 +14,7 @@ import com.digitalbank.accountopening.common.exception.ApplicationNotEditableExc
 import com.digitalbank.accountopening.common.exception.ApplicationNotCancellableException;
 import com.digitalbank.accountopening.common.exception.ApplicationNotFoundException;
 import com.digitalbank.accountopening.common.exception.ApplicationNotSubmittableException;
+import com.digitalbank.accountopening.common.exception.ApplicationRuleEvaluationNotAllowedException;
 import com.digitalbank.accountopening.common.exception.ProductInactiveException;
 import com.digitalbank.accountopening.common.exception.ProductNotFoundException;
 import com.digitalbank.accountopening.product.Product;
@@ -18,32 +23,46 @@ import com.digitalbank.accountopening.integration.cifkyc.CifKycVerificationResul
 import com.digitalbank.accountopening.integration.cifkyc.CifKycVerificationService;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import com.digitalbank.accountopening.common.exception.KycAlreadyVerifiedException;
 
+import java.time.Clock;
 import java.time.OffsetDateTime;
+import java.util.EnumSet;
 import java.util.List;
+import java.util.Set;
 import java.util.UUID;
 
 @Service
 public class ApplicationService {
 
+    private static final Set<ApplicationStatus> RULE_EVALUATION_ALLOWED_STATUSES =
+            EnumSet.of(ApplicationStatus.DRAFT, ApplicationStatus.SUBMITTED);
+
     private final AccountApplicationRepository applicationRepository;
     private final ApplicationStatusHistoryRepository historyRepository;
     private final ProductRepository productRepository;
     private final AccountApplicationMapper applicationMapper;
+    private final ApplicationRuleEvaluationService applicationRuleEvaluationService;
     private final CifKycVerificationService cifKycVerificationService;
+
+    private final Clock clock;
 
     public ApplicationService(
             AccountApplicationRepository applicationRepository,
             ApplicationStatusHistoryRepository historyRepository,
             ProductRepository productRepository,
             AccountApplicationMapper applicationMapper,
-            CifKycVerificationService cifKycVerificationService
+            CifKycVerificationService cifKycVerificationService,
+            ApplicationRuleEvaluationService applicationRuleEvaluationService,
+            Clock clock
     ) {
         this.applicationRepository = applicationRepository;
         this.historyRepository = historyRepository;
         this.productRepository = productRepository;
         this.applicationMapper = applicationMapper;
         this.cifKycVerificationService = cifKycVerificationService;
+        this.applicationRuleEvaluationService = applicationRuleEvaluationService;
+        this.clock = clock;
     }
 
     @Transactional
@@ -146,6 +165,7 @@ public class ApplicationService {
         return applicationMapper.toResponse(application, product);
     }
 
+
     @Transactional(readOnly = true)
     public List<ApplicationHistoryResponse> getApplicationHistory(UUID applicationId) {
         findApplication(applicationId);
@@ -156,12 +176,22 @@ public class ApplicationService {
                 .toList();
     }
 
-    @Transactional(readOnly = true)
+    @Transactional
     public ApplicationKycVerificationResponse verifyCifKyc(UUID applicationId) {
-        AccountApplication application = findApplication(applicationId);
-        CifKycVerificationResult verificationResult = cifKycVerificationService.verify(
-                application.getCustomerId()
-        );
+    AccountApplication application = findApplication(applicationId);
+
+    if ("VERIFIED".equals(application.getKycStatus())
+            && application.getCifVerifiedAt() != null) {
+        throw new KycAlreadyVerifiedException();
+    }
+
+    CifKycVerificationResult verificationResult = cifKycVerificationService.verify(
+            application.getCustomerId()
+    );
+
+        application.setKycStatus(verificationResult.kycStatus());
+        application.setCifVerifiedAt(OffsetDateTime.now(clock));
+        applicationRepository.save(application);
 
         return new ApplicationKycVerificationResponse(
                 applicationId,
@@ -173,6 +203,24 @@ public class ApplicationService {
         );
     }
 
+    @Transactional(readOnly = true)
+    public ApplicationRuleEvaluationResponse evaluateRules(UUID applicationId) {
+        AccountApplication application = findApplication(applicationId);
+
+        if (!RULE_EVALUATION_ALLOWED_STATUSES.contains(application.getStatus())) {
+            throw new ApplicationRuleEvaluationNotAllowedException(application.getStatus());
+        }
+
+        RuleEvaluationResult result =
+                applicationRuleEvaluationService.evaluate(application);
+
+        return new ApplicationRuleEvaluationResponse(
+                applicationId,
+                result.eligible(),
+                result.ruleResults(),
+                result.failedRules()
+        );
+    }
     private AccountApplication findApplication(UUID applicationId) {
         return applicationRepository.findById(applicationId)
                 .orElseThrow(() -> new ApplicationNotFoundException(applicationId));
@@ -190,4 +238,6 @@ public class ApplicationService {
         }
         return product;
     }
+
+
 }
