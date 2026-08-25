@@ -79,6 +79,39 @@ public class GlobalExceptionHandler {
         );
     }
 
+    @ExceptionHandler(InvalidApplicationStatusTransitionException.class)
+    public ResponseEntity<ErrorResponse> handleInvalidApplicationStatusTransition(
+            InvalidApplicationStatusTransitionException exception
+    ) {
+        return error(
+                HttpStatus.CONFLICT,
+                exception.getMessage(),
+                "INVALID_APPLICATION_STATUS_TRANSITION"
+        );
+    }
+
+    @ExceptionHandler(ApplicationProcessingNotAllowedException.class)
+    public ResponseEntity<ErrorResponse> handleApplicationProcessingNotAllowed(
+            ApplicationProcessingNotAllowedException exception
+    ) {
+        return error(
+                HttpStatus.CONFLICT,
+                exception.getMessage(),
+                "APPLICATION_PROCESSING_NOT_ALLOWED"
+        );
+    }
+
+    @ExceptionHandler(ApplicationKycVerificationRequiredException.class)
+    public ResponseEntity<ErrorResponse> handleApplicationKycVerificationRequired(
+            ApplicationKycVerificationRequiredException exception
+    ) {
+        return error(
+                HttpStatus.CONFLICT,
+                exception.getMessage(),
+                "APPLICATION_KYC_VERIFICATION_REQUIRED"
+        );
+    }
+
     @ExceptionHandler(ApplicationKycCheckNotAllowedException.class)
     public ResponseEntity<ErrorResponse> handleApplicationKycCheckNotAllowed(
             ApplicationKycCheckNotAllowedException exception

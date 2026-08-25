@@ -95,7 +95,7 @@ public class AccountApplicationController {
         );
     }
     @PostMapping("/{applicationId}/evaluate-rules")
-        public ApiResponse<ApplicationRuleEvaluationResponse> evaluateRules(
+    public ApiResponse<ApplicationRuleEvaluationResponse> evaluateRules(
                 @PathVariable UUID applicationId
         ) {
         return ApiResponse.success(
@@ -103,4 +103,12 @@ public class AccountApplicationController {
                 applicationService.evaluateRules(applicationId)
         );
         }
+
+    @PostMapping("/{applicationId}/process")
+    public ApiResponse<ApplicationResponse> processApplication(@PathVariable UUID applicationId) {
+        return ApiResponse.success(
+                "Application processed successfully",
+                applicationService.processApplication(applicationId)
+        );
+    }
 }

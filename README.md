@@ -27,7 +27,7 @@ Khách hàng hiện hữu
 → Đánh giá Business Rules
 ```
 
-Phạm vi đã hoàn thành đến hết Tuần 3: Account Application, CIF/KYC integration và Business Rules. Approval, Core Banking, retry, notification và audit log thuộc các tuần sau.
+Phạm vi hiện tại: Account Application, CIF/KYC integration, Business Rules và workflow foundation. Approval staff, Core Banking, retry, notification và audit log thuộc các tuần sau.
 
 ## Tiến độ hiện tại
 
@@ -105,7 +105,7 @@ Các trạng thái trong enum `ApplicationStatus`:
 - `CANCELLED`: Hồ sơ đã bị hủy
 - `FAILED`: Hồ sơ gặp lỗi trong quá trình xử lý
 
-Hiện tại project sử dụng các luồng `DRAFT → SUBMITTED`, `DRAFT → CANCELLED` và `SUBMITTED → CANCELLED`. KYC check và rule evaluation chỉ chạy ở `SUBMITTED`; cả hai không thay đổi status hoặc tạo status history. `evaluate-rules` chỉ đánh giá eligibility, chưa tự động approve, reject hoặc điều phối workflow.
+Hiện tại project sử dụng các luồng `DRAFT → SUBMITTED`, `DRAFT → CANCELLED`, `SUBMITTED → CANCELLED`, `SUBMITTED → APPROVED` và `SUBMITTED → UNDER_REVIEW`. KYC check và rule evaluation chỉ chạy ở `SUBMITTED`; evaluate-rules vẫn read-only. Endpoint process dùng KYC snapshot và kết quả rule để điều phối APPROVED hoặc UNDER_REVIEW.
 
 ## Kết quả Tuần 2
 
@@ -265,3 +265,7 @@ Khi tạo hoặc submit hồ sơ, thay đổi trạng thái và lịch sử ph�
 - **Tuần 8 — Notification và Audit Log:** gửi thông báo và lưu dấu vết xử lý.
 
 Việc đổi roadmap chỉ thay đổi cách nhóm và đánh số tiến độ, không thay đổi code nghiệp vụ đã hoàn thành.
+
+## Documentation
+
+Kiến trúc, phạm vi, workflow, API và trạng thái triển khai của project được duy trì tại `docs/README.md`.

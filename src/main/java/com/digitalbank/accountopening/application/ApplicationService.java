@@ -3,6 +3,7 @@ package com.digitalbank.accountopening.application;
 import com.digitalbank.accountopening.application.dto.ApplicationRuleEvaluationResponse;
 import com.digitalbank.accountopening.application.rule.ApplicationRuleEvaluationService;
 import com.digitalbank.accountopening.application.rule.RuleEvaluationResult;
+import com.digitalbank.accountopening.application.workflow.ApplicationWorkflowService;
 
 import com.digitalbank.accountopening.application.dto.ApplicationResponse;
 import com.digitalbank.accountopening.application.dto.ApplicationHistoryResponse;
@@ -15,6 +16,8 @@ import com.digitalbank.accountopening.common.exception.ApplicationNotCancellable
 import com.digitalbank.accountopening.common.exception.ApplicationNotFoundException;
 import com.digitalbank.accountopening.common.exception.ApplicationNotSubmittableException;
 import com.digitalbank.accountopening.common.exception.ApplicationKycCheckNotAllowedException;
+import com.digitalbank.accountopening.common.exception.ApplicationKycVerificationRequiredException;
+import com.digitalbank.accountopening.common.exception.ApplicationProcessingNotAllowedException;
 import com.digitalbank.accountopening.common.exception.ApplicationRuleEvaluationNotAllowedException;
 import com.digitalbank.accountopening.common.exception.ProductInactiveException;
 import com.digitalbank.accountopening.common.exception.ProductNotFoundException;
@@ -48,6 +51,7 @@ public class ApplicationService {
     private final AccountApplicationMapper applicationMapper;
     private final ApplicationRuleEvaluationService applicationRuleEvaluationService;
     private final CifKycVerificationService cifKycVerificationService;
+    private final ApplicationWorkflowService applicationWorkflowService;
 
     private final Clock clock;
 
@@ -58,6 +62,7 @@ public class ApplicationService {
             AccountApplicationMapper applicationMapper,
             CifKycVerificationService cifKycVerificationService,
             ApplicationRuleEvaluationService applicationRuleEvaluationService,
+            ApplicationWorkflowService applicationWorkflowService,
             Clock clock
     ) {
         this.applicationRepository = applicationRepository;
@@ -66,6 +71,7 @@ public class ApplicationService {
         this.applicationMapper = applicationMapper;
         this.cifKycVerificationService = cifKycVerificationService;
         this.applicationRuleEvaluationService = applicationRuleEvaluationService;
+        this.applicationWorkflowService = applicationWorkflowService;
         this.clock = clock;
     }
 
@@ -131,17 +137,13 @@ public class ApplicationService {
         }
 
         Product product = findActiveProduct(application.getProductCode());
-        ApplicationStatus oldStatus = application.getStatus();
-        application.setStatus(ApplicationStatus.SUBMITTED);
         application.setSubmittedAt(OffsetDateTime.now(clock));
-
-        ApplicationStatusHistory history = new ApplicationStatusHistory();
-        history.setApplication(application);
-        history.setFromStatus(oldStatus);
-        history.setToStatus(ApplicationStatus.SUBMITTED);
-        history.setChangedBy(application.getCustomerId());
-        history.setReason("Application submitted");
-        historyRepository.save(history);
+        applicationWorkflowService.transition(
+                application,
+                ApplicationStatus.SUBMITTED,
+                application.getCustomerId(),
+                "Application submitted"
+        );
 
         return applicationMapper.toResponse(application, product);
     }
@@ -149,21 +151,18 @@ public class ApplicationService {
     @Transactional
     public ApplicationResponse cancelApplication(UUID applicationId) {
         AccountApplication application = findApplication(applicationId);
-        ApplicationStatus previousStatus = application.getStatus();
-        if (previousStatus != ApplicationStatus.DRAFT && previousStatus != ApplicationStatus.SUBMITTED) {
+        ApplicationStatus currentStatus = application.getStatus();
+        if (currentStatus != ApplicationStatus.DRAFT && currentStatus != ApplicationStatus.SUBMITTED) {
             throw new ApplicationNotCancellableException();
         }
 
-        application.setStatus(ApplicationStatus.CANCELLED);
         application.setCancelledAt(OffsetDateTime.now(clock));
-
-        ApplicationStatusHistory history = new ApplicationStatusHistory();
-        history.setApplication(application);
-        history.setFromStatus(previousStatus);
-        history.setToStatus(ApplicationStatus.CANCELLED);
-        history.setChangedBy(application.getCustomerId());
-        history.setReason("Application cancelled");
-        historyRepository.save(history);
+        applicationWorkflowService.transition(
+                application,
+                ApplicationStatus.CANCELLED,
+                application.getCustomerId(),
+                "Application cancelled"
+        );
 
         Product product = findProduct(application.getProductCode());
         return applicationMapper.toResponse(application, product);
@@ -229,6 +228,31 @@ public class ApplicationService {
                 result.failedRules()
         );
     }
+
+    @Transactional
+    public ApplicationResponse processApplication(UUID applicationId) {
+        AccountApplication application = findApplication(applicationId);
+        if (application.getStatus() != ApplicationStatus.SUBMITTED) {
+            throw new ApplicationProcessingNotAllowedException(application.getStatus());
+        }
+
+        if (!hasCurrentKycVerification(application)) {
+            throw new ApplicationKycVerificationRequiredException();
+        }
+
+        RuleEvaluationResult evaluationResult = applicationRuleEvaluationService.evaluate(application);
+        ApplicationStatus targetStatus = evaluationResult.eligible()
+                ? ApplicationStatus.APPROVED
+                : ApplicationStatus.UNDER_REVIEW;
+        String reason = evaluationResult.eligible()
+                ? "Application automatically approved after business rule evaluation"
+                : "Application requires manual review after business rule evaluation";
+
+        applicationWorkflowService.transition(application, targetStatus, "SYSTEM", reason);
+
+        return applicationMapper.toResponse(application, findProduct(application.getProductCode()));
+    }
+
     private AccountApplication findApplication(UUID applicationId) {
         return applicationRepository.findById(applicationId)
                 .orElseThrow(() -> new ApplicationNotFoundException(applicationId));

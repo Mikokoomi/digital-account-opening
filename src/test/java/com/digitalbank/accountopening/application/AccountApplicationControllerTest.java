@@ -12,6 +12,8 @@ import com.digitalbank.accountopening.common.exception.ApplicationNotFoundExcept
 import com.digitalbank.accountopening.common.exception.ApplicationNotSubmittableException;
 import com.digitalbank.accountopening.common.exception.ApplicationKycCheckNotAllowedException;
 import com.digitalbank.accountopening.common.exception.ApplicationRuleEvaluationNotAllowedException;
+import com.digitalbank.accountopening.common.exception.ApplicationKycVerificationRequiredException;
+import com.digitalbank.accountopening.common.exception.ApplicationProcessingNotAllowedException;
 import com.digitalbank.accountopening.common.exception.KycAlreadyVerifiedException;
 import com.digitalbank.accountopening.integration.cifkyc.CifKycClientException;
 import com.digitalbank.accountopening.integration.cifkyc.CifKycVerificationErrorCode;
@@ -503,6 +505,61 @@ void evaluateRules_shouldReturnNotFoundWhenApplicationDoesNotExist()
                         "Business rule evaluation is not allowed for application status: CANCELLED"
                 ));
     }
+
+    @Test
+    void processApplication_shouldReturnProcessedApplication() throws Exception {
+        UUID applicationId = UUID.randomUUID();
+        when(applicationService.processApplication(applicationId))
+                .thenReturn(response(applicationId, "CURRENT_ACCOUNT", ApplicationStatus.APPROVED, null));
+
+        mockMvc.perform(post("/api/applications/{applicationId}/process", applicationId))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.success").value(true))
+                .andExpect(jsonPath("$.message").value("Application processed successfully"))
+                .andExpect(jsonPath("$.data.applicationId").value(applicationId.toString()))
+                .andExpect(jsonPath("$.data.status").value("APPROVED"));
+    }
+
+    @Test
+    void processApplication_shouldReturnConflictWhenStatusIsNotSubmitted() throws Exception {
+        UUID applicationId = UUID.randomUUID();
+        when(applicationService.processApplication(applicationId))
+                .thenThrow(new ApplicationProcessingNotAllowedException(ApplicationStatus.DRAFT));
+
+        mockMvc.perform(post("/api/applications/{applicationId}/process", applicationId))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.success").value(false))
+                .andExpect(jsonPath("$.errorCode").value("APPLICATION_PROCESSING_NOT_ALLOWED"))
+                .andExpect(jsonPath("$.message").value(
+                        "Application processing is not allowed for application status: DRAFT"
+                ));
+    }
+
+    @Test
+    void processApplication_shouldReturnConflictWhenCurrentKycVerificationIsMissing() throws Exception {
+        UUID applicationId = UUID.randomUUID();
+        when(applicationService.processApplication(applicationId))
+                .thenThrow(new ApplicationKycVerificationRequiredException());
+
+        mockMvc.perform(post("/api/applications/{applicationId}/process", applicationId))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.errorCode").value("APPLICATION_KYC_VERIFICATION_REQUIRED"))
+                .andExpect(jsonPath("$.message").value(
+                        "Current KYC verification is required before processing application"
+                ));
+    }
+
+    @Test
+    void processApplication_shouldReturnNotFoundWhenApplicationDoesNotExist() throws Exception {
+        UUID applicationId = UUID.randomUUID();
+        when(applicationService.processApplication(applicationId))
+                .thenThrow(new ApplicationNotFoundException(applicationId));
+
+        mockMvc.perform(post("/api/applications/{applicationId}/process", applicationId))
+                .andExpect(status().isNotFound())
+                .andExpect(jsonPath("$.errorCode").value("APPLICATION_NOT_FOUND"));
+    }
+
     private ApplicationResponse response(
             UUID applicationId,
             String productCode,

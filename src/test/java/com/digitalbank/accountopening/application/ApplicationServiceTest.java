@@ -18,6 +18,8 @@ import com.digitalbank.accountopening.common.exception.ApplicationNotFoundExcept
 import com.digitalbank.accountopening.common.exception.ApplicationNotSubmittableException;
 import com.digitalbank.accountopening.common.exception.ApplicationKycCheckNotAllowedException;
 import com.digitalbank.accountopening.common.exception.ApplicationRuleEvaluationNotAllowedException;
+import com.digitalbank.accountopening.common.exception.ApplicationKycVerificationRequiredException;
+import com.digitalbank.accountopening.common.exception.ApplicationProcessingNotAllowedException;
 import com.digitalbank.accountopening.common.exception.ProductInactiveException;
 import com.digitalbank.accountopening.common.exception.ProductNotFoundException;
 import com.digitalbank.accountopening.common.exception.KycAlreadyVerifiedException;
@@ -30,6 +32,7 @@ import com.digitalbank.accountopening.integration.cifkyc.CifKycVerificationResul
 import com.digitalbank.accountopening.integration.cifkyc.CifKycVerificationService;
 
 import com.digitalbank.accountopening.application.rule.ApplicationRuleEvaluationService;
+import com.digitalbank.accountopening.application.workflow.ApplicationWorkflowService;
 
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -56,6 +59,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.spy;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
@@ -80,10 +84,13 @@ class ApplicationServiceTest {
     @Mock
     private CifKycVerificationService cifKycVerificationService;
 
+    private ApplicationWorkflowService applicationWorkflowService;
+
     private ApplicationService applicationService;
 
     @BeforeEach
     void setUp() {
+        applicationWorkflowService = spy(new ApplicationWorkflowService(historyRepository));
         applicationService = new ApplicationService(
         applicationRepository,
         historyRepository,
@@ -91,6 +98,7 @@ class ApplicationServiceTest {
         new AccountApplicationMapper(),
         cifKycVerificationService,
         applicationRuleEvaluationService,
+        applicationWorkflowService,
         Clock.fixed(TEST_INSTANT, ZoneOffset.UTC)
 );
     }
@@ -294,6 +302,12 @@ class ApplicationServiceTest {
         assertEquals(ApplicationStatus.SUBMITTED, historyCaptor.getValue().getToStatus());
         assertEquals("CUSTOMER-001", historyCaptor.getValue().getChangedBy());
         assertEquals("Application submitted", historyCaptor.getValue().getReason());
+        verify(applicationWorkflowService).transition(
+                application,
+                ApplicationStatus.SUBMITTED,
+                "CUSTOMER-001",
+                "Application submitted"
+        );
     }
 
     @Test
@@ -376,6 +390,12 @@ class ApplicationServiceTest {
         assertEquals(ApplicationStatus.CANCELLED, historyCaptor.getValue().getToStatus());
         assertEquals("CUSTOMER-001", historyCaptor.getValue().getChangedBy());
         assertEquals("Application cancelled", historyCaptor.getValue().getReason());
+        verify(applicationWorkflowService).transition(
+                application,
+                ApplicationStatus.CANCELLED,
+                "CUSTOMER-001",
+                "Application cancelled"
+        );
     }
 
     @Test
@@ -916,5 +936,126 @@ class ApplicationServiceTest {
         verifyNoInteractions(applicationRuleEvaluationService);
         verify(applicationRepository, never()).save(any());
         verify(historyRepository, never()).save(any());
+    }
+
+    @Test
+    void processApplication_shouldApproveEligibleSubmittedApplicationWithCurrentKyc() {
+        UUID applicationId = UUID.randomUUID();
+        AccountApplication application = application(applicationId, "CUSTOMER-001", "CURRENT_ACCOUNT");
+        application.setStatus(ApplicationStatus.SUBMITTED);
+        application.setKycStatus("VERIFIED");
+        application.setCifVerifiedAt(OffsetDateTime.ofInstant(TEST_INSTANT, ZoneOffset.UTC));
+        application.setKycExpiryDate(LocalDate.of(2026, 8, 12));
+        RuleEvaluationResult evaluationResult = RuleEvaluationResult.from(List.of(
+                new RuleResult(ApplicationRuleCode.PRODUCT_ACTIVE, true, "Product is active"),
+                new RuleResult(ApplicationRuleCode.KYC_VERIFIED, true, "KYC verification is confirmed")
+        ));
+        when(applicationRepository.findById(applicationId)).thenReturn(Optional.of(application));
+        when(applicationRuleEvaluationService.evaluate(application)).thenReturn(evaluationResult);
+        when(productRepository.findByProductCode("CURRENT_ACCOUNT")).thenReturn(Optional.of(activeProduct()));
+
+        ApplicationResponse response = applicationService.processApplication(applicationId);
+
+        ArgumentCaptor<ApplicationStatusHistory> historyCaptor =
+                ArgumentCaptor.forClass(ApplicationStatusHistory.class);
+        verify(historyRepository).save(historyCaptor.capture());
+        assertEquals(ApplicationStatus.APPROVED, application.getStatus());
+        assertEquals(ApplicationStatus.APPROVED, response.status());
+        assertEquals(ApplicationStatus.SUBMITTED, historyCaptor.getValue().getFromStatus());
+        assertEquals(ApplicationStatus.APPROVED, historyCaptor.getValue().getToStatus());
+        assertEquals("SYSTEM", historyCaptor.getValue().getChangedBy());
+        assertEquals(
+                "Application automatically approved after business rule evaluation",
+                historyCaptor.getValue().getReason()
+        );
+        verify(applicationRuleEvaluationService).evaluate(application);
+        verify(applicationRepository, never()).save(any());
+    }
+
+    @Test
+    void processApplication_shouldMoveIneligibleSubmittedApplicationToUnderReview() {
+        UUID applicationId = UUID.randomUUID();
+        AccountApplication application = application(applicationId, "CUSTOMER-001", "CURRENT_ACCOUNT");
+        application.setStatus(ApplicationStatus.SUBMITTED);
+        application.setKycStatus("VERIFIED");
+        application.setCifVerifiedAt(OffsetDateTime.ofInstant(TEST_INSTANT, ZoneOffset.UTC));
+        application.setKycExpiryDate(LocalDate.of(2026, 8, 12));
+        RuleEvaluationResult evaluationResult = RuleEvaluationResult.from(List.of(
+                new RuleResult(ApplicationRuleCode.PRODUCT_ACTIVE, false, "Product is inactive"),
+                new RuleResult(ApplicationRuleCode.KYC_VERIFIED, true, "KYC verification is confirmed")
+        ));
+        when(applicationRepository.findById(applicationId)).thenReturn(Optional.of(application));
+        when(applicationRuleEvaluationService.evaluate(application)).thenReturn(evaluationResult);
+        when(productRepository.findByProductCode("CURRENT_ACCOUNT")).thenReturn(Optional.of(activeProduct()));
+
+        ApplicationResponse response = applicationService.processApplication(applicationId);
+
+        ArgumentCaptor<ApplicationStatusHistory> historyCaptor =
+                ArgumentCaptor.forClass(ApplicationStatusHistory.class);
+        verify(historyRepository).save(historyCaptor.capture());
+        assertEquals(ApplicationStatus.UNDER_REVIEW, application.getStatus());
+        assertEquals(ApplicationStatus.UNDER_REVIEW, response.status());
+        assertEquals(ApplicationStatus.SUBMITTED, historyCaptor.getValue().getFromStatus());
+        assertEquals(ApplicationStatus.UNDER_REVIEW, historyCaptor.getValue().getToStatus());
+        assertEquals("SYSTEM", historyCaptor.getValue().getChangedBy());
+        assertEquals(
+                "Application requires manual review after business rule evaluation",
+                historyCaptor.getValue().getReason()
+        );
+        verify(applicationRuleEvaluationService).evaluate(application);
+        verify(applicationRepository, never()).save(any());
+    }
+
+    @Test
+    void processApplication_shouldRejectStatusesOtherThanSubmittedWithoutEvaluationOrHistory() {
+        for (ApplicationStatus status : List.of(
+                ApplicationStatus.DRAFT,
+                ApplicationStatus.UNDER_REVIEW,
+                ApplicationStatus.APPROVED,
+                ApplicationStatus.REJECTED,
+                ApplicationStatus.CANCELLED,
+                ApplicationStatus.FAILED
+        )) {
+            UUID applicationId = UUID.randomUUID();
+            AccountApplication application = application(applicationId, "CUSTOMER-001", "CURRENT_ACCOUNT");
+            application.setStatus(status);
+            when(applicationRepository.findById(applicationId)).thenReturn(Optional.of(application));
+
+            ApplicationProcessingNotAllowedException exception = assertThrows(
+                    ApplicationProcessingNotAllowedException.class,
+                    () -> applicationService.processApplication(applicationId)
+            );
+
+            assertEquals(
+                    "Application processing is not allowed for application status: " + status,
+                    exception.getMessage()
+            );
+            assertEquals(status, application.getStatus());
+        }
+
+        verifyNoInteractions(applicationRuleEvaluationService);
+        verify(historyRepository, never()).save(any());
+    }
+
+    @Test
+    void processApplication_shouldRequireCurrentKycVerificationBeforeEvaluation() {
+        UUID applicationId = UUID.randomUUID();
+        AccountApplication application = application(applicationId, "CUSTOMER-001", "CURRENT_ACCOUNT");
+        application.setStatus(ApplicationStatus.SUBMITTED);
+        application.setKycStatus("VERIFIED");
+        application.setCifVerifiedAt(OffsetDateTime.ofInstant(TEST_INSTANT, ZoneOffset.UTC));
+        application.setKycExpiryDate(LocalDate.of(2026, 8, 11));
+        when(applicationRepository.findById(applicationId)).thenReturn(Optional.of(application));
+
+        ApplicationKycVerificationRequiredException exception = assertThrows(
+                ApplicationKycVerificationRequiredException.class,
+                () -> applicationService.processApplication(applicationId)
+        );
+
+        assertEquals("Current KYC verification is required before processing application", exception.getMessage());
+        assertEquals(ApplicationStatus.SUBMITTED, application.getStatus());
+        verifyNoInteractions(applicationRuleEvaluationService);
+        verify(historyRepository, never()).save(any());
+        verify(applicationRepository, never()).save(any());
     }
 }
