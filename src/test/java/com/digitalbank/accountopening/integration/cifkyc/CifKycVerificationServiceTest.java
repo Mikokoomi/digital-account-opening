@@ -49,6 +49,8 @@ class CifKycVerificationServiceTest {
         assertEquals("ACTIVE", result.customerStatus());
         assertEquals("VERIFIED", result.kycStatus());
         assertEquals(TODAY.plusDays(1), result.kycExpiryDate());
+        assertEquals(false, result.reviewRequired());
+        assertEquals(null, result.reviewReason());
     }
 
     @Test
@@ -181,6 +183,38 @@ class CifKycVerificationServiceTest {
         );
     }
 
+    @Test
+    void verify_shouldReturnValidManualReviewSignal() {
+        CifKycCustomerResponse customer = new CifKycCustomerResponse(
+                "CUS002", "Tran Thi B", LocalDate.of(2000, 8, 20),
+                "ACTIVE", "VERIFIED", TODAY.plusDays(1),
+                true, ReviewReason.CUSTOMER_PROFILE_REVIEW
+        );
+        when(cifKycClient.getCustomer("CUS002")).thenReturn(Optional.of(customer));
+
+        CifKycVerificationResult result = verificationService.verify("CUS002");
+
+        assertTrue(result.reviewRequired());
+        assertEquals(ReviewReason.CUSTOMER_PROFILE_REVIEW, result.reviewReason());
+    }
+
+    @Test
+    void verify_shouldTreatMissingManualReviewReasonAsIntegrationFailure() {
+        assertIncompleteResponseFailure(new CifKycCustomerResponse(
+                "CUS001", "Nguyen Van A", LocalDate.of(1998, 5, 15),
+                "ACTIVE", "VERIFIED", TODAY.plusDays(1), true, null
+        ));
+    }
+
+    @Test
+    void verify_shouldTreatUnexpectedManualReviewReasonAsIntegrationFailure() {
+        assertIncompleteResponseFailure(new CifKycCustomerResponse(
+                "CUS001", "Nguyen Van A", LocalDate.of(1998, 5, 15),
+                "ACTIVE", "VERIFIED", TODAY.plusDays(1),
+                false, ReviewReason.SPECIAL_HANDLING_REQUIRED
+        ));
+    }
+
     private void assertIncompleteResponseFailure(CifKycCustomerResponse customer) {
         when(cifKycClient.getCustomer("CUS001")).thenReturn(Optional.of(customer));
 
@@ -220,7 +254,9 @@ class CifKycVerificationServiceTest {
                 LocalDate.of(1998, 5, 15),
                 customerStatus,
                 kycStatus,
-                kycExpiryDate
+                kycExpiryDate,
+                false,
+                null
         );
     }
 }

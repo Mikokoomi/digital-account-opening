@@ -13,11 +13,13 @@ import com.digitalbank.accountopening.common.exception.ApplicationNotSubmittable
 import com.digitalbank.accountopening.common.exception.ApplicationKycCheckNotAllowedException;
 import com.digitalbank.accountopening.common.exception.ApplicationRuleEvaluationNotAllowedException;
 import com.digitalbank.accountopening.common.exception.ApplicationKycVerificationRequiredException;
+import com.digitalbank.accountopening.common.exception.ApplicationMandatoryConditionsNotSatisfiedException;
 import com.digitalbank.accountopening.common.exception.ApplicationProcessingNotAllowedException;
 import com.digitalbank.accountopening.common.exception.KycAlreadyVerifiedException;
 import com.digitalbank.accountopening.integration.cifkyc.CifKycClientException;
 import com.digitalbank.accountopening.integration.cifkyc.CifKycVerificationErrorCode;
 import com.digitalbank.accountopening.integration.cifkyc.CifKycVerificationException;
+import com.digitalbank.accountopening.integration.cifkyc.ReviewReason;
 import com.digitalbank.accountopening.application.dto.ApplicationRuleEvaluationResponse;
 import com.digitalbank.accountopening.application.rule.ApplicationRuleCode;
 import com.digitalbank.accountopening.application.rule.RuleResult;
@@ -248,7 +250,9 @@ class AccountApplicationControllerTest {
                         true,
                         "ACTIVE",
                         "VERIFIED",
-                        LocalDate.of(2027, 12, 31)
+                        LocalDate.of(2027, 12, 31),
+                        false,
+                        null
                 )
         );
 
@@ -261,7 +265,9 @@ class AccountApplicationControllerTest {
                 .andExpect(jsonPath("$.data.eligible").value(true))
                 .andExpect(jsonPath("$.data.customerStatus").value("ACTIVE"))
                 .andExpect(jsonPath("$.data.kycStatus").value("VERIFIED"))
-                .andExpect(jsonPath("$.data.kycExpiryDate").value("2027-12-31"));
+                .andExpect(jsonPath("$.data.kycExpiryDate").value("2027-12-31"))
+                .andExpect(jsonPath("$.data.reviewRequired").value(false))
+                .andExpect(jsonPath("$.data.reviewReason").doesNotExist());
     }
 
     @Test
@@ -378,6 +384,8 @@ class AccountApplicationControllerTest {
                 "VERIFIED",
                 verifiedAt,
                 LocalDate.of(2027, 12, 31),
+                false,
+                null,
                 null,
                 null,
                 null,
@@ -389,7 +397,8 @@ class AccountApplicationControllerTest {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data.kycStatus").value("VERIFIED"))
                 .andExpect(jsonPath("$.data.cifVerifiedAt").value("2026-08-21T05:00:00Z"))
-                .andExpect(jsonPath("$.data.kycExpiryDate").value("2027-12-31"));
+                .andExpect(jsonPath("$.data.kycExpiryDate").value("2027-12-31"))
+                .andExpect(jsonPath("$.data.reviewRequired").value(false));
     }
 
         @Test
@@ -550,6 +559,18 @@ void evaluateRules_shouldReturnNotFoundWhenApplicationDoesNotExist()
     }
 
     @Test
+    void processApplication_shouldReturnConflictWhenMandatoryConditionsFail() throws Exception {
+        UUID applicationId = UUID.randomUUID();
+        when(applicationService.processApplication(applicationId))
+                .thenThrow(new ApplicationMandatoryConditionsNotSatisfiedException());
+
+        mockMvc.perform(post("/api/applications/{applicationId}/process", applicationId))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.errorCode")
+                        .value("APPLICATION_MANDATORY_CONDITIONS_NOT_SATISFIED"));
+    }
+
+    @Test
     void processApplication_shouldReturnNotFoundWhenApplicationDoesNotExist() throws Exception {
         UUID applicationId = UUID.randomUUID();
         when(applicationService.processApplication(applicationId))
@@ -583,6 +604,8 @@ void evaluateRules_shouldReturnNotFoundWhenApplicationDoesNotExist()
                 productCode,
                 "Test Product",
                 status,
+                null,
+                null,
                 null,
                 null,
                 null,

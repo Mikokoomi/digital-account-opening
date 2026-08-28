@@ -18,8 +18,9 @@ Customer onboarding/tạo CIF, authentication banking production, KYC OCR/biomet
 |---|---|
 | Customer | Xem product và sử dụng application API. |
 | Account Opening System | Lưu application, KYC snapshot, rules, history. |
-| CIF/KYC Mock | External customer/KYC data source. |
-| Bank Staff, Core Banking Mock, Notification, Scheduler | PLANNED. |
+| CIF/KYC Mock | Nguồn customer/KYC và tín hiệu manual review `reviewRequired/reviewReason`. |
+| Bank Staff | Nhận, xử lý và quyết định ApprovalCase. |
+| Core Banking Mock, Notification, Scheduler | PLANNED. |
 
 ## 5. Business Assumptions
 
@@ -27,8 +28,11 @@ Customer onboarding/tạo CIF, authentication banking production, KYC OCR/biomet
 - Mỗi application có UUID `applicationId` và một requested product.
 - Chỉ DRAFT update/submit; DRAFT hoặc SUBMITTED cancel.
 - KYC check và rule evaluation chỉ ở SUBMITTED.
-- KYC success lưu snapshot, không đổi status/history; rule evaluation read-only.
+- KYC success lưu snapshot gồm KYC và tín hiệu manual review, không đổi status/history; rule evaluation read-only.
+- Product/KYC là mandatory conditions, staff không được override.
+- Manual review không phát sinh từ mandatory failure; nó chỉ phát sinh khi upstream trả `reviewRequired=true` kèm `reviewReason` hợp lệ.
+- `reviewRequired=false` yêu cầu `reviewReason=null`; `reviewRequired=true` yêu cầu reason khác null.
 
 ## 6. Technical Assumptions và Boundaries
 
-KYC snapshot current cần `VERIFIED`, verification timestamp và expiry không trước hôm nay. Core Banking chỉ nhận approved application trong target design. Retry chỉ technical failure; idempotency tránh tạo account trùng; notification failure không đổi business outcome; audit cần bất biến về mặt nghiệp vụ.
+KYC snapshot current cần `VERIFIED`, verification timestamp, expiry không trước hôm nay và manual-review snapshot hợp lệ. CIF/KYC response vi phạm invariant manual review là integration/data-contract failure. Core Banking chỉ nhận approved application trong target design. Retry chỉ technical failure; idempotency tránh tạo account trùng; notification failure không đổi business outcome; audit cần bất biến về mặt nghiệp vụ.

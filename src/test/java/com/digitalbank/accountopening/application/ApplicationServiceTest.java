@@ -19,6 +19,7 @@ import com.digitalbank.accountopening.common.exception.ApplicationNotSubmittable
 import com.digitalbank.accountopening.common.exception.ApplicationKycCheckNotAllowedException;
 import com.digitalbank.accountopening.common.exception.ApplicationRuleEvaluationNotAllowedException;
 import com.digitalbank.accountopening.common.exception.ApplicationKycVerificationRequiredException;
+import com.digitalbank.accountopening.common.exception.ApplicationMandatoryConditionsNotSatisfiedException;
 import com.digitalbank.accountopening.common.exception.ApplicationProcessingNotAllowedException;
 import com.digitalbank.accountopening.common.exception.ProductInactiveException;
 import com.digitalbank.accountopening.common.exception.ProductNotFoundException;
@@ -30,9 +31,11 @@ import com.digitalbank.accountopening.integration.cifkyc.CifKycVerificationError
 import com.digitalbank.accountopening.integration.cifkyc.CifKycVerificationException;
 import com.digitalbank.accountopening.integration.cifkyc.CifKycVerificationResult;
 import com.digitalbank.accountopening.integration.cifkyc.CifKycVerificationService;
+import com.digitalbank.accountopening.integration.cifkyc.ReviewReason;
 
 import com.digitalbank.accountopening.application.rule.ApplicationRuleEvaluationService;
 import com.digitalbank.accountopening.application.workflow.ApplicationWorkflowService;
+import com.digitalbank.accountopening.approval.ApprovalCaseService;
 
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -84,6 +87,9 @@ class ApplicationServiceTest {
     @Mock
     private CifKycVerificationService cifKycVerificationService;
 
+    @Mock
+    private ApprovalCaseService approvalCaseService;
+
     private ApplicationWorkflowService applicationWorkflowService;
 
     private ApplicationService applicationService;
@@ -99,6 +105,7 @@ class ApplicationServiceTest {
         cifKycVerificationService,
         applicationRuleEvaluationService,
         applicationWorkflowService,
+        approvalCaseService,
         Clock.fixed(TEST_INSTANT, ZoneOffset.UTC)
 );
     }
@@ -533,10 +540,14 @@ class ApplicationServiceTest {
         assertEquals("ACTIVE", result.customerStatus());
         assertEquals("VERIFIED", result.kycStatus());
         assertEquals(LocalDate.of(2027, 12, 31), result.kycExpiryDate());
+        assertEquals(false, result.reviewRequired());
+        assertNull(result.reviewReason());
         assertEquals(ApplicationStatus.SUBMITTED, application.getStatus());
         assertEquals("VERIFIED", application.getKycStatus());
         assertEquals(OffsetDateTime.ofInstant(TEST_INSTANT, ZoneOffset.UTC), application.getCifVerifiedAt());
         assertEquals(LocalDate.of(2027, 12, 31), application.getKycExpiryDate());
+        assertEquals(false, application.getReviewRequired());
+        assertNull(application.getReviewReason());
         verify(cifKycVerificationService).verify("CUS001");
         verify(applicationRepository).save(application);
         verify(historyRepository, never()).save(any());
@@ -685,6 +696,32 @@ class ApplicationServiceTest {
     }
 
     @Test
+    void verifyCifKyc_shouldPersistManualReviewSnapshot() {
+        UUID applicationId = UUID.randomUUID();
+        AccountApplication application = application(applicationId, "CUS002", "CURRENT_ACCOUNT");
+        application.setStatus(ApplicationStatus.SUBMITTED);
+        CifKycVerificationResult result = new CifKycVerificationResult(
+                "CUS002",
+                true,
+                "ACTIVE",
+                "VERIFIED",
+                LocalDate.of(2027, 12, 31),
+                true,
+                ReviewReason.CUSTOMER_PROFILE_REVIEW
+        );
+        when(applicationRepository.findById(applicationId)).thenReturn(Optional.of(application));
+        when(cifKycVerificationService.verify("CUS002")).thenReturn(result);
+
+        ApplicationKycVerificationResponse response = applicationService.verifyCifKyc(applicationId);
+
+        assertTrue(response.reviewRequired());
+        assertEquals(ReviewReason.CUSTOMER_PROFILE_REVIEW, response.reviewReason());
+        assertEquals(true, application.getReviewRequired());
+        assertEquals(ReviewReason.CUSTOMER_PROFILE_REVIEW, application.getReviewReason());
+        verify(applicationRepository).save(application);
+    }
+
+    @Test
     void verifyCifKyc_shouldTreatExpiryTodayAsAlreadyVerified() {
         UUID applicationId = UUID.randomUUID();
         AccountApplication application = application(applicationId, "CUSTOMER-001", "CURRENT_ACCOUNT");
@@ -725,7 +762,9 @@ class ApplicationServiceTest {
                 true,
                 "ACTIVE",
                 "VERIFIED",
-                LocalDate.of(2027, 12, 31)
+                LocalDate.of(2027, 12, 31),
+                false,
+                null
         );
     }
 
@@ -767,6 +806,8 @@ class ApplicationServiceTest {
         application.setCustomerId(customerId);
         application.setProductCode(productCode);
         application.setStatus(ApplicationStatus.DRAFT);
+        application.setReviewRequired(false);
+        application.setReviewReason(null);
         application.setCreatedAt(now);
         application.setUpdatedAt(now);
         return application;
@@ -965,15 +1006,16 @@ class ApplicationServiceTest {
         assertEquals(ApplicationStatus.APPROVED, historyCaptor.getValue().getToStatus());
         assertEquals("SYSTEM", historyCaptor.getValue().getChangedBy());
         assertEquals(
-                "Application automatically approved after business rule evaluation",
+                "Application automatically approved after mandatory business checks",
                 historyCaptor.getValue().getReason()
         );
         verify(applicationRuleEvaluationService).evaluate(application);
+        verifyNoInteractions(approvalCaseService);
         verify(applicationRepository, never()).save(any());
     }
 
     @Test
-    void processApplication_shouldMoveIneligibleSubmittedApplicationToUnderReview() {
+    void processApplication_shouldBlockMandatoryRuleFailureWithoutApprovalCase() {
         UUID applicationId = UUID.randomUUID();
         AccountApplication application = application(applicationId, "CUSTOMER-001", "CURRENT_ACCOUNT");
         application.setStatus(ApplicationStatus.SUBMITTED);
@@ -986,24 +1028,44 @@ class ApplicationServiceTest {
         ));
         when(applicationRepository.findById(applicationId)).thenReturn(Optional.of(application));
         when(applicationRuleEvaluationService.evaluate(application)).thenReturn(evaluationResult);
+        assertThrows(
+                ApplicationMandatoryConditionsNotSatisfiedException.class,
+                () -> applicationService.processApplication(applicationId)
+        );
+
+        assertEquals(ApplicationStatus.SUBMITTED, application.getStatus());
+        verify(applicationRuleEvaluationService).evaluate(application);
+        verifyNoInteractions(approvalCaseService);
+        verify(historyRepository, never()).save(any());
+        verify(applicationRepository, never()).save(any());
+    }
+
+    @Test
+    void processApplication_shouldRouteValidReviewSignalToUnderReviewAndCreateCase() {
+        UUID applicationId = UUID.randomUUID();
+        AccountApplication application = application(applicationId, "CUS002", "CURRENT_ACCOUNT");
+        application.setStatus(ApplicationStatus.SUBMITTED);
+        application.setKycStatus("VERIFIED");
+        application.setCifVerifiedAt(OffsetDateTime.ofInstant(TEST_INSTANT, ZoneOffset.UTC));
+        application.setKycExpiryDate(LocalDate.of(2026, 8, 12));
+        application.setReviewRequired(true);
+        application.setReviewReason(ReviewReason.CUSTOMER_PROFILE_REVIEW);
+        RuleEvaluationResult evaluationResult = RuleEvaluationResult.from(List.of(
+                new RuleResult(ApplicationRuleCode.PRODUCT_ACTIVE, true, "Product is active"),
+                new RuleResult(ApplicationRuleCode.KYC_VERIFIED, true, "KYC verification is confirmed")
+        ));
+        when(applicationRepository.findById(applicationId)).thenReturn(Optional.of(application));
+        when(applicationRuleEvaluationService.evaluate(application)).thenReturn(evaluationResult);
         when(productRepository.findByProductCode("CURRENT_ACCOUNT")).thenReturn(Optional.of(activeProduct()));
 
         ApplicationResponse response = applicationService.processApplication(applicationId);
 
-        ArgumentCaptor<ApplicationStatusHistory> historyCaptor =
-                ArgumentCaptor.forClass(ApplicationStatusHistory.class);
-        verify(historyRepository).save(historyCaptor.capture());
-        assertEquals(ApplicationStatus.UNDER_REVIEW, application.getStatus());
         assertEquals(ApplicationStatus.UNDER_REVIEW, response.status());
-        assertEquals(ApplicationStatus.SUBMITTED, historyCaptor.getValue().getFromStatus());
-        assertEquals(ApplicationStatus.UNDER_REVIEW, historyCaptor.getValue().getToStatus());
-        assertEquals("SYSTEM", historyCaptor.getValue().getChangedBy());
-        assertEquals(
-                "Application requires manual review after business rule evaluation",
-                historyCaptor.getValue().getReason()
+        verify(approvalCaseService).createForManualReview(
+                application,
+                "CUSTOMER_PROFILE_REVIEW"
         );
-        verify(applicationRuleEvaluationService).evaluate(application);
-        verify(applicationRepository, never()).save(any());
+        verify(historyRepository).save(any(ApplicationStatusHistory.class));
     }
 
     @Test
@@ -1034,6 +1096,7 @@ class ApplicationServiceTest {
         }
 
         verifyNoInteractions(applicationRuleEvaluationService);
+        verifyNoInteractions(approvalCaseService);
         verify(historyRepository, never()).save(any());
     }
 

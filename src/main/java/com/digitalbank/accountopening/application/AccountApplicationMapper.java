@@ -18,6 +18,8 @@ public class AccountApplicationMapper {
                 application.getKycStatus(),
                 application.getCifVerifiedAt(),
                 application.getKycExpiryDate(),
+                application.getReviewRequired(),
+                application.getReviewReason(),
                 application.getRejectReason(),
                 application.getSubmittedAt(),
                 application.getCancelledAt(),

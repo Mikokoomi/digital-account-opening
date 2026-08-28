@@ -7,6 +7,8 @@ public record CifKycVerificationResult(
         boolean eligible,
         String customerStatus,
         String kycStatus,
-        LocalDate kycExpiryDate
+        LocalDate kycExpiryDate,
+        boolean reviewRequired,
+        ReviewReason reviewReason
 ) {
 }

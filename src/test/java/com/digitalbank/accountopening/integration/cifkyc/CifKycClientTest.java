@@ -53,7 +53,9 @@ class CifKycClientTest {
                           "dateOfBirth": "1998-05-15",
                           "customerStatus": "ACTIVE",
                           "kycStatus": "VERIFIED",
-                          "kycExpiryDate": "2027-12-31"
+                          "kycExpiryDate": "2027-12-31",
+                          "reviewRequired": false,
+                          "reviewReason": null
                         }
                         """, MediaType.APPLICATION_JSON));
 
@@ -67,6 +69,8 @@ class CifKycClientTest {
         assertEquals("ACTIVE", customer.customerStatus());
         assertEquals("VERIFIED", customer.kycStatus());
         assertEquals(LocalDate.of(2027, 12, 31), customer.kycExpiryDate());
+        assertFalse(customer.reviewRequired());
+        assertEquals(null, customer.reviewReason());
     }
 
     @Test

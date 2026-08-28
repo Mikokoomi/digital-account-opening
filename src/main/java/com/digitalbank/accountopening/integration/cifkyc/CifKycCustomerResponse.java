@@ -8,6 +8,8 @@ public record CifKycCustomerResponse(
         LocalDate dateOfBirth,
         String customerStatus,
         String kycStatus,
-        LocalDate kycExpiryDate
+        LocalDate kycExpiryDate,
+        Boolean reviewRequired,
+        ReviewReason reviewReason
 ) {
 }

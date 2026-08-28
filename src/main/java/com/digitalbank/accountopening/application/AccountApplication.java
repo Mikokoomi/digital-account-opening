@@ -1,6 +1,7 @@
 package com.digitalbank.accountopening.application;
 
 import com.digitalbank.accountopening.application.enums.ApplicationStatus;
+import com.digitalbank.accountopening.integration.cifkyc.ReviewReason;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.EnumType;
@@ -49,6 +50,13 @@ public class AccountApplication {
 
     @Column(name = "kyc_expiry_date")
     private LocalDate kycExpiryDate;
+
+    @Column(name = "review_required")
+    private Boolean reviewRequired;
+
+    @Enumerated(EnumType.STRING)
+    @Column(name = "review_reason", length = 50)
+    private ReviewReason reviewReason;
 
     @Column(name = "reject_reason", length = 500)
     private String rejectReason;

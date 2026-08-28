@@ -49,14 +49,19 @@ public class CifKycVerificationService {
                 true,
                 customer.customerStatus(),
                 customer.kycStatus(),
-                customer.kycExpiryDate()
+                customer.kycExpiryDate(),
+                customer.reviewRequired(),
+                customer.reviewReason()
         );
     }
 
     private void validateVerificationData(CifKycCustomerResponse customer) {
         if (customer.customerStatus() == null
                 || customer.kycStatus() == null
-                || customer.kycExpiryDate() == null) {
+                || customer.kycExpiryDate() == null
+                || customer.reviewRequired() == null
+                || customer.reviewRequired() && customer.reviewReason() == null
+                || !customer.reviewRequired() && customer.reviewReason() != null) {
             throw new CifKycClientException(
                     "CIF/KYC service returned an incomplete customer response"
             );

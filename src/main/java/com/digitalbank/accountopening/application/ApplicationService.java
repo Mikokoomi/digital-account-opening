@@ -4,6 +4,7 @@ import com.digitalbank.accountopening.application.dto.ApplicationRuleEvaluationR
 import com.digitalbank.accountopening.application.rule.ApplicationRuleEvaluationService;
 import com.digitalbank.accountopening.application.rule.RuleEvaluationResult;
 import com.digitalbank.accountopening.application.workflow.ApplicationWorkflowService;
+import com.digitalbank.accountopening.approval.ApprovalCaseService;
 
 import com.digitalbank.accountopening.application.dto.ApplicationResponse;
 import com.digitalbank.accountopening.application.dto.ApplicationHistoryResponse;
@@ -17,6 +18,8 @@ import com.digitalbank.accountopening.common.exception.ApplicationNotFoundExcept
 import com.digitalbank.accountopening.common.exception.ApplicationNotSubmittableException;
 import com.digitalbank.accountopening.common.exception.ApplicationKycCheckNotAllowedException;
 import com.digitalbank.accountopening.common.exception.ApplicationKycVerificationRequiredException;
+import com.digitalbank.accountopening.common.exception.ApplicationMandatoryConditionsNotSatisfiedException;
+import com.digitalbank.accountopening.common.exception.ManualReviewDataInvalidException;
 import com.digitalbank.accountopening.common.exception.ApplicationProcessingNotAllowedException;
 import com.digitalbank.accountopening.common.exception.ApplicationRuleEvaluationNotAllowedException;
 import com.digitalbank.accountopening.common.exception.ProductInactiveException;
@@ -52,6 +55,7 @@ public class ApplicationService {
     private final ApplicationRuleEvaluationService applicationRuleEvaluationService;
     private final CifKycVerificationService cifKycVerificationService;
     private final ApplicationWorkflowService applicationWorkflowService;
+    private final ApprovalCaseService approvalCaseService;
 
     private final Clock clock;
 
@@ -63,6 +67,7 @@ public class ApplicationService {
             CifKycVerificationService cifKycVerificationService,
             ApplicationRuleEvaluationService applicationRuleEvaluationService,
             ApplicationWorkflowService applicationWorkflowService,
+            ApprovalCaseService approvalCaseService,
             Clock clock
     ) {
         this.applicationRepository = applicationRepository;
@@ -72,6 +77,7 @@ public class ApplicationService {
         this.cifKycVerificationService = cifKycVerificationService;
         this.applicationRuleEvaluationService = applicationRuleEvaluationService;
         this.applicationWorkflowService = applicationWorkflowService;
+        this.approvalCaseService = approvalCaseService;
         this.clock = clock;
     }
 
@@ -198,6 +204,8 @@ public class ApplicationService {
         application.setKycStatus(verificationResult.kycStatus());
         application.setCifVerifiedAt(OffsetDateTime.now(clock));
         application.setKycExpiryDate(verificationResult.kycExpiryDate());
+        application.setReviewRequired(verificationResult.reviewRequired());
+        application.setReviewReason(verificationResult.reviewReason());
         applicationRepository.save(application);
 
         return new ApplicationKycVerificationResponse(
@@ -206,7 +214,9 @@ public class ApplicationService {
                 verificationResult.eligible(),
                 verificationResult.customerStatus(),
                 verificationResult.kycStatus(),
-                verificationResult.kycExpiryDate()
+                verificationResult.kycExpiryDate(),
+                verificationResult.reviewRequired(),
+                verificationResult.reviewReason()
         );
     }
 
@@ -241,14 +251,26 @@ public class ApplicationService {
         }
 
         RuleEvaluationResult evaluationResult = applicationRuleEvaluationService.evaluate(application);
-        ApplicationStatus targetStatus = evaluationResult.eligible()
-                ? ApplicationStatus.APPROVED
-                : ApplicationStatus.UNDER_REVIEW;
-        String reason = evaluationResult.eligible()
-                ? "Application automatically approved after business rule evaluation"
-                : "Application requires manual review after business rule evaluation";
+        if (!evaluationResult.eligible()) {
+            throw new ApplicationMandatoryConditionsNotSatisfiedException();
+        }
+
+        validateManualReviewSnapshot(application);
+        boolean reviewRequired = Boolean.TRUE.equals(application.getReviewRequired());
+        ApplicationStatus targetStatus = reviewRequired
+                ? ApplicationStatus.UNDER_REVIEW
+                : ApplicationStatus.APPROVED;
+        String reason = reviewRequired
+                ? "Application requires manual review: " + application.getReviewReason()
+                : "Application automatically approved after mandatory business checks";
 
         applicationWorkflowService.transition(application, targetStatus, "SYSTEM", reason);
+        if (targetStatus == ApplicationStatus.UNDER_REVIEW) {
+            approvalCaseService.createForManualReview(
+                    application,
+                    application.getReviewReason().name()
+            );
+        }
 
         return applicationMapper.toResponse(application, findProduct(application.getProductCode()));
     }
@@ -276,7 +298,20 @@ public class ApplicationService {
         return "VERIFIED".equals(application.getKycStatus())
                 && application.getCifVerifiedAt() != null
                 && kycExpiryDate != null
-                && !kycExpiryDate.isBefore(LocalDate.now(clock));
+                && !kycExpiryDate.isBefore(LocalDate.now(clock))
+                && application.getReviewRequired() != null
+                && (Boolean.TRUE.equals(application.getReviewRequired())
+                        ? application.getReviewReason() != null
+                        : application.getReviewReason() == null);
+    }
+
+    private void validateManualReviewSnapshot(AccountApplication application) {
+        Boolean reviewRequired = application.getReviewRequired();
+        if (reviewRequired == null
+                || reviewRequired && application.getReviewReason() == null
+                || !reviewRequired && application.getReviewReason() != null) {
+            throw new ManualReviewDataInvalidException();
+        }
     }
 
 }

@@ -112,6 +112,85 @@ public class GlobalExceptionHandler {
         );
     }
 
+    @ExceptionHandler(ApplicationMandatoryConditionsNotSatisfiedException.class)
+    public ResponseEntity<ErrorResponse> handleApplicationMandatoryConditionsNotSatisfied(
+            ApplicationMandatoryConditionsNotSatisfiedException exception
+    ) {
+        return error(
+                HttpStatus.CONFLICT,
+                exception.getMessage(),
+                "APPLICATION_MANDATORY_CONDITIONS_NOT_SATISFIED"
+        );
+    }
+
+    @ExceptionHandler(ManualReviewDataInvalidException.class)
+    public ResponseEntity<ErrorResponse> handleManualReviewDataInvalid(
+            ManualReviewDataInvalidException exception
+    ) {
+        return error(HttpStatus.CONFLICT, exception.getMessage(), "MANUAL_REVIEW_DATA_INVALID");
+    }
+
+    @ExceptionHandler(ApprovalCaseNotFoundException.class)
+    public ResponseEntity<ErrorResponse> handleApprovalCaseNotFound(
+            ApprovalCaseNotFoundException exception
+    ) {
+        return error(HttpStatus.NOT_FOUND, exception.getMessage(), "APPROVAL_CASE_NOT_FOUND");
+    }
+
+    @ExceptionHandler(ApprovalCaseAlreadyExistsException.class)
+    public ResponseEntity<ErrorResponse> handleApprovalCaseAlreadyExists(
+            ApprovalCaseAlreadyExistsException exception
+    ) {
+        return error(HttpStatus.CONFLICT, exception.getMessage(), "APPROVAL_CASE_ALREADY_EXISTS");
+    }
+
+    @ExceptionHandler(ApprovalCaseAssignmentNotAllowedException.class)
+    public ResponseEntity<ErrorResponse> handleApprovalCaseAssignmentNotAllowed(
+            ApprovalCaseAssignmentNotAllowedException exception
+    ) {
+        return error(
+                HttpStatus.CONFLICT,
+                exception.getMessage(),
+                "APPROVAL_CASE_ASSIGNMENT_NOT_ALLOWED"
+        );
+    }
+
+    @ExceptionHandler(ApprovalCaseDecisionNotAllowedException.class)
+    public ResponseEntity<ErrorResponse> handleApprovalCaseDecisionNotAllowed(
+            ApprovalCaseDecisionNotAllowedException exception
+    ) {
+        return error(
+                HttpStatus.CONFLICT,
+                exception.getMessage(),
+                "APPROVAL_CASE_DECISION_NOT_ALLOWED"
+        );
+    }
+
+    @ExceptionHandler(ApprovalCaseStaffMismatchException.class)
+    public ResponseEntity<ErrorResponse> handleApprovalCaseStaffMismatch(
+            ApprovalCaseStaffMismatchException exception
+    ) {
+        return error(HttpStatus.CONFLICT, exception.getMessage(), "APPROVAL_CASE_STAFF_MISMATCH");
+    }
+
+    @ExceptionHandler(ApprovalCaseBusinessRulesNotSatisfiedException.class)
+    public ResponseEntity<ErrorResponse> handleApprovalCaseBusinessRulesNotSatisfied(
+            ApprovalCaseBusinessRulesNotSatisfiedException exception
+    ) {
+        return error(
+                HttpStatus.CONFLICT,
+                exception.getMessage(),
+                "APPROVAL_CASE_BUSINESS_RULES_NOT_SATISFIED"
+        );
+    }
+
+    @ExceptionHandler(ApplicationNotUnderReviewException.class)
+    public ResponseEntity<ErrorResponse> handleApplicationNotUnderReview(
+            ApplicationNotUnderReviewException exception
+    ) {
+        return error(HttpStatus.CONFLICT, exception.getMessage(), "APPLICATION_NOT_UNDER_REVIEW");
+    }
+
     @ExceptionHandler(ApplicationKycCheckNotAllowedException.class)
     public ResponseEntity<ErrorResponse> handleApplicationKycCheckNotAllowed(
             ApplicationKycCheckNotAllowedException exception
