@@ -23,3 +23,19 @@ Trước khi staff approve, hệ thống evaluate lại mandatory rules. Product
 ## DEC-006 - Manual review dùng tín hiệu upstream rõ nghĩa
 
 Manual review được quyết định riêng bằng CIF/KYC `reviewRequired/reviewReason`, không suy ra từ mandatory rule failure. Mandatory fail giữ application SUBMITTED và không tạo ApprovalCase. Contract invariant sai là integration/data-contract failure.
+
+## DEC-007 - Core Banking sở hữu BankAccount
+
+Core Banking Mock tạo account và account number. Main chỉ lưu local reference, không lưu balance, transaction hoặc ledger.
+
+## DEC-008 - Approval và provisioning là hai bước riêng
+
+Approval kết thúc ở `APPROVED`. Endpoint create-account riêng bắt đầu provisioning và không làm Core Banking outage rollback quyết định approval.
+
+## DEC-009 - HTTP call nằm ngoài database transaction
+
+Phase A commit `ACCOUNT_CREATING`, phase B gọi Core Banking không có transaction, phase C lưu reference và commit `COMPLETED`. Technical/data-contract failure giữ `ACCOUNT_CREATING` vì external account có thể đã được tạo dù response bị mất.
+
+## DEC-010 - Reliability được hoãn
+
+Duplicate application hiện trả conflict. Retry, idempotency, integration tracking và reconciliation chưa implement.

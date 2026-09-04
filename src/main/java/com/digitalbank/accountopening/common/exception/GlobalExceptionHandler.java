@@ -4,6 +4,8 @@ import com.digitalbank.accountopening.common.response.ErrorResponse;
 import com.digitalbank.accountopening.integration.cifkyc.CifKycClientException;
 import com.digitalbank.accountopening.integration.cifkyc.CifKycVerificationErrorCode;
 import com.digitalbank.accountopening.integration.cifkyc.CifKycVerificationException;
+import com.digitalbank.accountopening.integration.corebanking.CoreBankingClientException;
+import com.digitalbank.accountopening.integration.corebanking.CoreBankingDuplicateApplicationException;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.validation.FieldError;
@@ -16,6 +18,21 @@ import java.time.LocalDateTime;
 
 @RestControllerAdvice
 public class GlobalExceptionHandler {
+
+    @ExceptionHandler(AccountCreationNotAllowedException.class)
+    public ResponseEntity<ErrorResponse> handleAccountCreationNotAllowed(AccountCreationNotAllowedException exception) {
+        return error(HttpStatus.CONFLICT, exception.getMessage(), "ACCOUNT_CREATION_NOT_ALLOWED");
+    }
+
+    @ExceptionHandler({BankAccountAlreadyExistsException.class, CoreBankingDuplicateApplicationException.class})
+    public ResponseEntity<ErrorResponse> handleBankAccountAlreadyExists(RuntimeException exception) {
+        return error(HttpStatus.CONFLICT, exception.getMessage(), "BANK_ACCOUNT_ALREADY_EXISTS");
+    }
+
+    @ExceptionHandler(CoreBankingClientException.class)
+    public ResponseEntity<ErrorResponse> handleCoreBankingClient(CoreBankingClientException exception) {
+        return error(HttpStatus.SERVICE_UNAVAILABLE, "Core Banking service is unavailable", "CORE_BANKING_SERVICE_UNAVAILABLE");
+    }
 
     @ExceptionHandler(ProductNotFoundException.class)
     public ResponseEntity<ErrorResponse> handleProductNotFound(

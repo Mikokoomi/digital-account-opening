@@ -7,6 +7,7 @@ erDiagram
     PRODUCTS ||--o{ ACCOUNT_APPLICATIONS : requested_by
     ACCOUNT_APPLICATIONS ||--o{ APPLICATION_STATUS_HISTORY : has
     ACCOUNT_APPLICATIONS ||--o| APPROVAL_CASES : requires
+    ACCOUNT_APPLICATIONS ||--o| BANK_ACCOUNTS : provisions
     PRODUCTS { bigint id PK
                varchar product_code UK }
     ACCOUNT_APPLICATIONS { uuid application_id PK
@@ -25,6 +26,10 @@ erDiagram
                      varchar status
                      varchar assigned_to
                      varchar decision_reason }
+    BANK_ACCOUNTS { uuid id PK
+                    uuid application_id FK,UK
+                    uuid external_account_id UK
+                    varchar account_number UK }
 ```
 
 ## 2. Entity / Table Definitions
@@ -35,11 +40,12 @@ erDiagram
 | `account_applications` | UUID ID, customer/product/status, KYC snapshot, `review_required/review_reason`, rejection/submission/cancellation/timestamps. |
 | `application_status_history` | UUID ID, application FK, from/to status, actor, reason, time. |
 | `approval_cases` | UUID ID, unique application FK, case status, assignment/review/decision data và timestamps. |
+| `bank_accounts` | Local projection: unique application/external account/account number, status và opened time. |
 
 ## 3. Relationships, Keys, Constraints, Indexes
 
-`account_applications.product_code` references `products(product_code)`. V7 thêm CHECK constraint: true phải có reason, false phải không có reason; null/null được giữ để nhận diện row cũ chưa refresh snapshot. History references application with `ON DELETE CASCADE`. `approval_cases.application_id` references application và UNIQUE. Approval indexes cover status, assigned staff và created time.
+`bank_accounts.application_id` references application và UNIQUE. `external_account_id` và `account_number` cũng UNIQUE. Main không lưu balance, transaction hoặc ledger.
 
 ## 4. Data Lifecycle Notes
 
-Flyway V1–V7/JPA là source of truth; V6 tạo ApprovalCase, V7 thêm manual-review snapshot. Hibernate chỉ validate schema. `integration_requests`, `bank_accounts`, `notifications`, `audit_logs` là PLANNED.
+Flyway V1–V8/JPA là source of truth; V8 tạo local `bank_accounts`. Core Banking Mock có database riêng và là owner của account domain. `integration_requests`, `notifications`, `audit_logs` vẫn PLANNED.

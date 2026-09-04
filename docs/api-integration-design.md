@@ -19,6 +19,7 @@ Base URL `http://localhost:8080`; application path uses UUID `{applicationId}`. 
 | `POST /api/applications/{id}/kyc-check` | SUBMITTED KYC validation/persistence. |
 | `POST /api/applications/{id}/evaluate-rules` | SUBMITTED read-only evaluation. |
 | `POST /api/applications/{id}/process` | Mandatory fail: 409 và giữ SUBMITTED; pass + no review: APPROVED; pass + review signal: UNDER_REVIEW. |
+| `POST /api/applications/{id}/create-account` | APPROVED-only provisioning; success returns COMPLETED and account reference. |
 | `GET /api/health`, `/actuator/health`, `/swagger-ui.html`, `/v3/api-docs` | Operational/OpenAPI endpoints. |
 
 ## 3. Approval APIs
@@ -45,9 +46,9 @@ Contract bổ sung:
 
 `reviewRequired=false` bắt buộc reason null; true bắt buộc reason có giá trị enum. Thiếu field, combination sai, enum lạ, empty response, HTTP bất thường hoặc connection failure đều là technical/data-contract error `503 CIF_KYC_SERVICE_UNAVAILABLE`. Customer absent/inactive, KYC unverified/expired là business error và không lưu success snapshot.
 
-## 5. Core Banking, Retry, Idempotency, Notification
+## 5. Core Banking Mock Integration
 
-PLANNED: APPROVED → integration_request/idempotency key → Core Banking Mock → bank_account/COMPLETED. Technical temporary failure uses controlled retry; business error/retry exhausted → FAILED. Notification failure is independent of application result.
+IMPLEMENTED: main calls `POST http://localhost:8082/api/accounts` after committing `APPROVED → ACCOUNT_CREATING`. Success stores a local reference and commits `ACCOUNT_CREATING → COMPLETED`. Duplicate application maps to `409 BANK_ACCOUNT_ALREADY_EXISTS`; timeout, 5xx or invalid response maps to `503 CORE_BANKING_SERVICE_UNAVAILABLE` and leaves `ACCOUNT_CREATING`. Retry, idempotency and integration tracking are not implemented.
 
 ## 6. Error Catalog
 
@@ -61,3 +62,5 @@ PLANNED: APPROVED → integration_request/idempotency key → Core Banking Mock 
 | 404 | `APPROVAL_CASE_NOT_FOUND` | Approval case absent. |
 | 409 | `APPROVAL_CASE_ALREADY_EXISTS`, `APPROVAL_CASE_ASSIGNMENT_NOT_ALLOWED`, `APPROVAL_CASE_DECISION_NOT_ALLOWED`, `APPROVAL_CASE_STAFF_MISMATCH`, `APPROVAL_CASE_BUSINESS_RULES_NOT_SATISFIED`, `APPLICATION_NOT_UNDER_REVIEW` | Approval invariant/state conflict. |
 | 503 | `CIF_KYC_SERVICE_UNAVAILABLE` | Technical integration/data-contract failure. |
+| 409 | `ACCOUNT_CREATION_NOT_ALLOWED`, `BANK_ACCOUNT_ALREADY_EXISTS` | Provisioning state/duplicate conflict. |
+| 503 | `CORE_BANKING_SERVICE_UNAVAILABLE` | Core Banking technical/data-contract failure. |

@@ -28,9 +28,10 @@ flowchart TD
     C2 --> O{Staff decision — IMPLEMENTED}
     O -- Approve --> L
     O -- Reject --> N[REJECTED]
-    L --> P[Core Banking Mock — PLANNED]
+    L --> AC[ACCOUNT_CREATING]
+    AC --> P[Core Banking Mock — IMPLEMENTED]
     P --> Q{Result}
-    Q -- Success --> R[bank_account, COMPLETED — PLANNED]
+    Q -- Success --> R[local bank_account, COMPLETED — IMPLEMENTED]
     Q -- temporary failure --> S[Controlled retry — PLANNED]
     S --> P
     Q -- business error/retry exhausted --> T[FAILED — PLANNED]
@@ -49,9 +50,11 @@ stateDiagram-v2
     SUBMITTED --> UNDER_REVIEW: mandatory pass + reviewRequired
     UNDER_REVIEW --> APPROVED: workflow policy
     UNDER_REVIEW --> REJECTED: workflow policy
+    APPROVED --> ACCOUNT_CREATING: create-account phase A
+    ACCOUNT_CREATING --> COMPLETED: account saved phase C
 ```
 
-`ApplicationWorkflowService` enforces application transitions. Public staff operations now expose assignment and UNDER_REVIEW approval/rejection. FAILED has no current flow.
+`ApplicationWorkflowService` also enforces `APPROVED → ACCOUNT_CREATING → COMPLETED`. `COMPLETED` is terminal. Technical Core Banking failure leaves the application at `ACCOUNT_CREATING`.
 
 ## 4. Allowed State Transitions
 
@@ -77,6 +80,8 @@ IMPLEMENTED:
 - Mandatory pass + `reviewRequired=true` và reason hợp lệ → `UNDER_REVIEW` và tạo ApprovalCase.
 
 Staff approval is IMPLEMENTED: routing to `UNDER_REVIEW` creates one `PENDING` case; assignment moves it to `ASSIGNED`; only assigned staff may approve/reject. Approve reevaluates mandatory rules, nhưng không yêu cầu `reviewRequired=false` vì review signal là lý do case tồn tại. Case và application transition hoàn tất trong một transaction.
+
+Account provisioning is a separate operation. Phase A commits `ACCOUNT_CREATING`, phase B calls Core Banking without a database transaction, and phase C atomically stores the local reference and transitions to `COMPLETED`.
 
 ## 7. Exception Overview, Audit and Status History
 

@@ -71,6 +71,13 @@ Mandatory conditions
 - Staff reject yêu cầu reason không rỗng.
 - Application, ApprovalCase và status history được cập nhật trong cùng transaction.
 
+### Core Banking và Account Provisioning
+
+- `POST /api/applications/{applicationId}/create-account` tạo tài khoản sau khi application được duyệt.
+- Core Banking Mock Service tại port `8082` sở hữu BankAccount; main chỉ lưu local account reference.
+- Flow thành công: `APPROVED → ACCOUNT_CREATING → COMPLETED`.
+- HTTP call chạy ngoài database transaction. Lỗi kỹ thuật trả `503` và giữ `ACCOUNT_CREATING` để tránh kết luận sai rằng external account chưa được tạo.
+
 ## Luồng nghiệp vụ
 
 ```text
@@ -101,6 +108,10 @@ SUBMITTED        reviewRequired?
                         Staff Decision
                          /           \
                     APPROVED      REJECTED
+                        ↓
+                 ACCOUNT_CREATING
+                        ↓
+                    COMPLETED
 ```
 
 ## API hiện có
@@ -118,6 +129,7 @@ SUBMITTED        reviewRequired?
 | POST | `/api/applications/{applicationId}/kyc-check` | Kiểm tra CIF/KYC cho application `SUBMITTED` |
 | POST | `/api/applications/{applicationId}/evaluate-rules` | Đánh giá mandatory rules, không thay đổi dữ liệu |
 | POST | `/api/applications/{applicationId}/process` | Process application theo KYC snapshot, rules và review signal |
+| POST | `/api/applications/{applicationId}/create-account` | Tạo Core Banking account cho application `APPROVED` |
 | GET | `/api/approval-cases` | Danh sách case; lọc tùy chọn theo `status`, `assignedTo` |
 | GET | `/api/approval-cases/{caseId}` | Xem chi tiết approval case |
 | PATCH | `/api/approval-cases/{caseId}/assign` | Assign case `PENDING` cho staff |
@@ -136,11 +148,13 @@ SUBMITTED        reviewRequired?
 - `SUBMITTED`: application đã gửi; có thể KYC check, evaluate rules hoặc process.
 - `UNDER_REVIEW`: application đang được staff xử lý qua ApprovalCase.
 - `APPROVED`: application được duyệt.
+- `ACCOUNT_CREATING`: yêu cầu tạo account đã bắt đầu; có thể đang chờ xác định kết quả external call.
+- `COMPLETED`: account đã được tạo và local reference đã được lưu.
 - `REJECTED`: application bị staff từ chối.
 - `CANCELLED`: application bị hủy.
 - `FAILED`: trạng thái lỗi đã được định nghĩa trong enum.
 
-Các transition đang được sử dụng gồm `DRAFT → SUBMITTED`, `DRAFT/SUBMITTED → CANCELLED`, `SUBMITTED → APPROVED`, `SUBMITTED → UNDER_REVIEW`, và `UNDER_REVIEW → APPROVED/REJECTED`. Mandatory failure khi process giữ application ở `SUBMITTED`.
+Các transition đang được sử dụng gồm `DRAFT → SUBMITTED`, `DRAFT/SUBMITTED → CANCELLED`, `SUBMITTED → APPROVED/UNDER_REVIEW`, `UNDER_REVIEW → APPROVED/REJECTED`, `APPROVED → ACCOUNT_CREATING` và `ACCOUNT_CREATING → COMPLETED`.
 
 ## Database
 
@@ -150,6 +164,7 @@ Các transition đang được sử dụng gồm `DRAFT → SUBMITTED`, `DRAFT/S
 | `account_applications` | Lưu application, KYC snapshot và manual-review snapshot. |
 | `application_status_history` | Lưu lịch sử chuyển trạng thái của application. |
 | `approval_cases` | Lưu manual-review case, assignment và quyết định của staff. |
+| `bank_accounts` | Local reference tới account do Core Banking sở hữu. |
 
 `approval_cases.application_id` có ràng buộc `UNIQUE`, nên mỗi application tối đa có một ApprovalCase.
 
@@ -175,6 +190,7 @@ Project không có bảng `customers`; customer master data thuộc CIF/KYC Mock
 - V5: KYC expiry snapshot.
 - V6: approval cases.
 - V7: manual-review snapshot.
+- V8: local bank-account references.
 
 ## CIF/KYC Mock Service
 
@@ -188,6 +204,10 @@ GET /api/customers/{customerId}
 
 Main service đọc `reviewRequired/reviewReason` từ response để tách manual review khỏi mandatory rule failure.
 
+## Core Banking Mock Service
+
+Core Banking Mock chạy tại port `8082`, dùng database `core_banking_mock` và cung cấp `POST /api/accounts`, `GET /api/accounts/{accountNumber}`. Source local: `C:\Users\Admin\core-banking-mock-service`.
+
 ## Cách chạy
 
 Yêu cầu: Java 21 và PostgreSQL với database `account_opening`.
@@ -199,6 +219,10 @@ git clone https://github.com/Mikokoomi/cif-kyc-mock-service.git
 Set-Location .\cif-kyc-mock-service
 .\mvnw.cmd spring-boot:run
 ```
+
+### Khởi động Core Banking Mock Service
+
+Trong repository Core Banking Mock, đặt `CORE_BANKING_DB_URL`, `CORE_BANKING_DB_USERNAME`, `CORE_BANKING_DB_PASSWORD`, rồi chạy `./mvnw.cmd spring-boot:run`.
 
 ### Khởi động Account Opening Service
 
@@ -234,13 +258,13 @@ Chạy regression suite:
 .\mvnw.cmd clean test
 ```
 
-Current regression suite: 136 tests passing.
+Current regression suite: 148 tests passing.
 
 ## Phạm vi hiện tại
 
-Implemented: existing customer account opening, product validation, account application, CIF/KYC integration, mandatory business rules, processing decision, manual review, ApprovalCase, staff approve/reject và status history.
+Implemented: existing customer account opening, product validation, CIF/KYC, mandatory rules, manual review, staff approval, Core Banking integration, account provisioning, local account reference và status history.
 
-Currently not implemented: Core Banking account creation, retry/idempotency, integration tracking, notification và audit.
+Currently not implemented: retry/idempotency, integration tracking, reconciliation, notification và audit.
 
 ## Quyết định kỹ thuật
 
