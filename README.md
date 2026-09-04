@@ -1,8 +1,6 @@
 # Digital Account Opening Application and Approval Workflow
 
-Đây là project mô phỏng quy trình khách hàng hiện hữu đăng ký mở thêm một tài khoản ngân hàng.
-
-Project tập trung vào phần backend, quản lý hồ sơ mở tài khoản, kiểm tra trạng thái, quy trình duyệt và tích hợp với các service giả lập.
+Backend project mô phỏng quy trình khách hàng hiện hữu đăng ký mở thêm một sản phẩm tài khoản ngân hàng. Hệ thống quản lý hồ sơ mở tài khoản, xác minh CIF/KYC, đánh giá điều kiện bắt buộc và điều phối phê duyệt thủ công khi cần.
 
 ## Công nghệ sử dụng
 
@@ -16,185 +14,185 @@ Project tập trung vào phần backend, quản lý hồ sơ mở tài khoản, 
 - JUnit
 - Mockito
 
-## Luồng nghiệp vụ chính
+## Chức năng hiện có
+
+### Product
+
+- Xem danh sách sản phẩm đang active.
+- Xem chi tiết sản phẩm theo `productCode`.
+
+### Account Application
+
+- Tạo application ở trạng thái `DRAFT`.
+- Xem application và cập nhật `productCode` khi còn `DRAFT`.
+- Submit `DRAFT → SUBMITTED`.
+- Cancel application ở trạng thái được phép.
+- Lưu và truy vấn application status history.
+
+### CIF/KYC Integration
+
+- Gọi CIF/KYC Mock Service qua HTTP.
+- Chỉ xác minh thành công khi customer tồn tại, `ACTIVE`, KYC `VERIFIED` và KYC chưa hết hạn.
+- Lưu KYC snapshot gồm `kycStatus`, `cifVerifiedAt`, `kycExpiryDate`, `reviewRequired` và `reviewReason`.
+- Phân biệt business failure của customer với technical hoặc upstream data-contract failure.
+
+### Business Rules
+
+- `PRODUCT_ACTIVE`
+- `KYC_VERIFIED`
+
+`eligible=true` chỉ có nghĩa các mandatory business conditions đã thỏa mãn. Giá trị này không quyết định manual review.
+
+### Application Processing
 
 ```text
-Khách hàng hiện hữu
-→ Chọn sản phẩm tài khoản
-→ Tạo hồ sơ (`DRAFT`)
-→ Submit hồ sơ (`SUBMITTED`)
-→ Kiểm tra CIF/KYC
-→ Đánh giá mandatory Business Rules
-→ Mandatory fail: BLOCK, giữ `SUBMITTED`, không tạo ApprovalCase
-→ Mandatory pass + `reviewRequired=false`: `APPROVED`
-→ Mandatory pass + `reviewRequired=true`: `UNDER_REVIEW` → ApprovalCase → staff decision
+SUBMITTED
+   ↓
+Mandatory conditions
+   ├── FAIL
+   │     → HTTP 409
+   │     → giữ SUBMITTED
+   │     → không ApprovalCase
+   │
+   └── PASS
+         ↓
+     reviewRequired?
+       ├── false → APPROVED
+       └── true  → UNDER_REVIEW → ApprovalCase
 ```
 
-Phạm vi hiện tại: Account Application, CIF/KYC integration, Business Rules, Application Workflow và Staff Approval. Core Banking, retry, notification và audit log thuộc các tuần sau.
+### Staff Approval
 
-## Tiến độ hiện tại
+- Mỗi application tối đa có một `ApprovalCase`.
+- Case lifecycle: `PENDING → ASSIGNED → APPROVED/REJECTED`.
+- Hỗ trợ xem danh sách, xem chi tiết, lọc case, assign staff, approve và reject.
+- Chỉ staff đã được assign mới có thể quyết định case.
+- Staff approve đánh giá lại mandatory rules; staff không thể override Product/KYC mandatory conditions.
+- Staff reject yêu cầu reason không rỗng.
+- Application, ApprovalCase và status history được cập nhật trong cùng transaction.
 
-### Tuần 1
+## Luồng nghiệp vụ
 
-- Chốt phạm vi và luồng nghiệp vụ chính
-- Thiết kế trạng thái hồ sơ, API và database
-- Khởi tạo project Spring Boot
-- Kết nối PostgreSQL
-- Cấu hình Flyway
-- Tạo health API
-- Tạo API xem danh sách sản phẩm
-- Tạo API xem chi tiết sản phẩm
+```text
+Existing Customer
+        ↓
+Select Product
+        ↓
+DRAFT
+        ↓
+SUBMITTED
+        ↓
+CIF/KYC Check
+        ↓
+Mandatory Rules
+        ↓
+   ┌────┴───────────────┐
+   │                    │
+ Fail                  Pass
+   │                    │
+SUBMITTED        reviewRequired?
+                    /       \
+                 false       true
+                   ↓           ↓
+               APPROVED   UNDER_REVIEW
+                              ↓
+                         ApprovalCase
+                              ↓
+                        Staff Decision
+                         /           \
+                    APPROVED      REJECTED
+```
 
-### Tuần 2 — Account Application + CIF/KYC Integration
-
-#### Account Application
-
-- Tạo migration, entity, repository, service và controller cho `account_applications` và `application_status_history`
-- Tạo, xem chi tiết và cập nhật `productCode` của hồ sơ `DRAFT`
-- Submit hồ sơ từ `DRAFT → SUBMITTED`
-- Hủy hồ sơ `DRAFT` hoặc `SUBMITTED` sang `CANCELLED`
-- Ghi và truy vấn lịch sử trạng thái theo thời gian tăng dần
-- Validation request, kiểm tra sản phẩm tồn tại/đang hoạt động và xử lý lỗi thống nhất
-
-#### CIF/KYC Integration
-
-- Xây dựng CIF/KYC Mock Service độc lập chạy ở port `8081`
-- Gọi HTTP bằng Spring `RestClient` thông qua `CifKycClient`
-- Kiểm tra customer tồn tại, trạng thái `ACTIVE`, KYC `VERIFIED` và ngày hết hạn KYC
-- Tạo endpoint `POST /api/applications/{applicationId}/kyc-check`
-- Xử lý các lỗi 404, 409 và 503 theo response convention hiện có
-- Dùng `Clock` để kiểm thử quy tắc hết hạn ổn định
-- Xử lý upstream response thiếu dữ liệu như một integration/data-contract failure
-- Hoàn thành **69 automated tests**, không có failure, error hoặc skipped test
-
-### Tuần 3 — Business Rules
-
-- Thiết kế `ApplicationRule`, `RuleResult`, `RuleEvaluationResult` và `ApplicationRuleEvaluationService`.
-- Implement `ProductActiveRule` và `KycVerifiedRule` theo thứ tự deterministic.
-- Tạo endpoint `POST /api/applications/{applicationId}/evaluate-rules` trả `eligible`, `ruleResults` và `failedRules`.
-- KYC check và rule evaluation chỉ được chạy khi hồ sơ ở `SUBMITTED`.
-- Persist snapshot KYC gồm `kycStatus`, `cifVerifiedAt` và `kycExpiryDate`.
-- `KycVerifiedRule` chỉ pass khi KYC đã verified, có timestamp và chưa hết hạn.
-- Hoàn thành **99 automated tests**, không có failure, error hoặc skipped test.
-
-### Tuần 4 — Application Workflow
-
-- Xây dựng `ApplicationWorkflowService` làm đầu mối kiểm soát state transition và ghi `ApplicationStatusHistory`.
-- Tạo endpoint process application dựa trên KYC snapshot còn hiệu lực và kết quả business rules.
-- Điều phối `SUBMITTED → APPROVED` khi toàn bộ rule pass.
-- Điều phối `SUBMITTED → UNDER_REVIEW` khi hồ sơ cần manual review.
-- Trả business error cho thao tác process và transition không hợp lệ.
-- Bao phủ workflow, processing flow, history và error handling bằng automated tests.
-
-Tại mốc đóng Tuần 4, hệ thống mới điều phối hồ sơ vào `UNDER_REVIEW`; phần xử lý tiếp theo được triển khai ở Tuần 5 bên dưới.
-
-### Tuần 5 — Staff Approval
-
-- Lưu manual-review snapshot `reviewRequired/reviewReason` từ CIF/KYC bằng migration V7.
-- Tách mandatory failure, manual review và auto approval thành ba outcome riêng.
-- Chỉ tạo `ApprovalCase` PENDING khi mandatory conditions pass và upstream yêu cầu review hợp lệ.
-- Hỗ trợ xem danh sách/chi tiết case và lọc theo status hoặc staff được phân công.
-- Thực hiện lifecycle `PENDING → ASSIGNED → APPROVED/REJECTED`.
-- Staff approve/reject làm application chuyển `UNDER_REVIEW → APPROVED/REJECTED` qua `ApplicationWorkflowService` và ghi status history.
-- Bảo vệ case terminal, đúng staff, application status, duplicate case và mandatory rules tại thời điểm approve; `reviewRequired=true` không cản staff approve.
-- Validation request và error response 400/404/409 nhất quán với project.
-- Hoàn thành **136 automated tests**, không có failure, error hoặc skipped test.
-
-## Các API hiện có
+## API hiện có
 
 | Method | Endpoint | Chức năng |
 |---|---|---|
-| GET | `/api/health` | Kiểm tra trạng thái cơ bản của ứng dụng |
-| GET | `/actuator/health` | Kiểm tra health của Spring Boot Actuator |
-| GET | `/api/products` | Xem danh sách sản phẩm đang hoạt động |
-| GET | `/api/products/{productCode}` | Xem chi tiết một sản phẩm |
-| POST | `/api/applications` | Tạo hồ sơ mở tài khoản |
-| GET | `/api/applications/{applicationId}` | Xem chi tiết hồ sơ |
-| PATCH | `/api/applications/{applicationId}` | Cập nhật `productCode` của hồ sơ `DRAFT` |
-| PATCH | `/api/applications/{applicationId}/submit` | Submit hồ sơ từ `DRAFT` sang `SUBMITTED` |
-| PATCH | `/api/applications/{applicationId}/cancel` | Hủy hồ sơ `DRAFT` hoặc `SUBMITTED` |
-| GET | `/api/applications/{applicationId}/history` | Xem lịch sử thay đổi trạng thái của hồ sơ |
-| POST | `/api/applications/{applicationId}/kyc-check` | Kiểm tra CIF/KYC cho hồ sơ `SUBMITTED` |
-| POST | `/api/applications/{applicationId}/evaluate-rules` | Đánh giá eligibility cho hồ sơ `SUBMITTED` |
-| POST | `/api/applications/{applicationId}/process` | Process hồ sơ dựa trên KYC snapshot và business rules |
-| GET | `/api/approval-cases` | Xem danh sách approval case; có thể lọc `status`, `assignedTo` |
+| GET | `/api/products` | Xem danh sách sản phẩm active |
+| GET | `/api/products/{productCode}` | Xem chi tiết sản phẩm |
+| POST | `/api/applications` | Tạo application `DRAFT` |
+| GET | `/api/applications/{applicationId}` | Xem chi tiết application |
+| PATCH | `/api/applications/{applicationId}` | Cập nhật `productCode` khi `DRAFT` |
+| PATCH | `/api/applications/{applicationId}/submit` | Submit application |
+| PATCH | `/api/applications/{applicationId}/cancel` | Cancel application ở trạng thái hợp lệ |
+| GET | `/api/applications/{applicationId}/history` | Xem status history |
+| POST | `/api/applications/{applicationId}/kyc-check` | Kiểm tra CIF/KYC cho application `SUBMITTED` |
+| POST | `/api/applications/{applicationId}/evaluate-rules` | Đánh giá mandatory rules, không thay đổi dữ liệu |
+| POST | `/api/applications/{applicationId}/process` | Process application theo KYC snapshot, rules và review signal |
+| GET | `/api/approval-cases` | Danh sách case; lọc tùy chọn theo `status`, `assignedTo` |
 | GET | `/api/approval-cases/{caseId}` | Xem chi tiết approval case |
-| PATCH | `/api/approval-cases/{caseId}/assign` | Phân công case `PENDING` cho staff |
-| POST | `/api/approval-cases/{caseId}/approve` | Staff được phân công duyệt case |
-| POST | `/api/approval-cases/{caseId}/reject` | Staff được phân công từ chối case với lý do |
-| GET | `/v3/api-docs` | Xem OpenAPI specification |
-| GET | `/swagger-ui.html` | Mở Swagger UI |
+| PATCH | `/api/approval-cases/{caseId}/assign` | Assign case `PENDING` cho staff |
+| POST | `/api/approval-cases/{caseId}/approve` | Staff được assign approve case |
+| POST | `/api/approval-cases/{caseId}/reject` | Staff được assign reject case với reason |
+| GET | `/api/health` | Kiểm tra trạng thái cơ bản của ứng dụng |
+| GET | `/actuator/health` | Spring Boot Actuator health |
+| GET | `/v3/api-docs` | OpenAPI specification |
+| GET | `/swagger-ui.html` | Swagger UI |
 
-## Trạng thái hồ sơ
+## Application Status
 
-Các trạng thái trong enum `ApplicationStatus`:
+`ApplicationStatus` hiện có:
 
-- `DRAFT`: Hồ sơ mới tạo, khách hàng vẫn có thể chỉnh sửa
-- `SUBMITTED`: Hồ sơ đã được gửi để xử lý
-- `UNDER_REVIEW`: Hồ sơ đang được nhân viên kiểm tra
-- `APPROVED`: Hồ sơ đã được duyệt
-- `REJECTED`: Hồ sơ bị từ chối
-- `CANCELLED`: Hồ sơ đã bị hủy
-- `FAILED`: Hồ sơ gặp lỗi trong quá trình xử lý
+- `DRAFT`: application mới tạo, có thể cập nhật hoặc submit.
+- `SUBMITTED`: application đã gửi; có thể KYC check, evaluate rules hoặc process.
+- `UNDER_REVIEW`: application đang được staff xử lý qua ApprovalCase.
+- `APPROVED`: application được duyệt.
+- `REJECTED`: application bị staff từ chối.
+- `CANCELLED`: application bị hủy.
+- `FAILED`: trạng thái lỗi đã được định nghĩa trong enum.
 
-Hiện tại project sử dụng các luồng `DRAFT → SUBMITTED`, `DRAFT → CANCELLED`, `SUBMITTED → CANCELLED`, `SUBMITTED → APPROVED`, `SUBMITTED → UNDER_REVIEW` và staff decision từ `UNDER_REVIEW`. `eligible` chỉ biểu thị mandatory rules pass. Mandatory fail giữ `SUBMITTED`; manual review dựa riêng vào `reviewRequired/reviewReason`. KYC check và rule evaluation chỉ chạy ở `SUBMITTED`; evaluate-rules vẫn read-only.
+Các transition đang được sử dụng gồm `DRAFT → SUBMITTED`, `DRAFT/SUBMITTED → CANCELLED`, `SUBMITTED → APPROVED`, `SUBMITTED → UNDER_REVIEW`, và `UNDER_REVIEW → APPROVED/REJECTED`. Mandatory failure khi process giữ application ở `SUBMITTED`.
 
-## Kết quả Tuần 2
+## Database
 
-Tuần 2 đã hoàn thành Account Application và CIF/KYC Integration:
+| Bảng | Trách nhiệm |
+|---|---|
+| `products` | Lưu sản phẩm tài khoản. |
+| `account_applications` | Lưu application, KYC snapshot và manual-review snapshot. |
+| `application_status_history` | Lưu lịch sử chuyển trạng thái của application. |
+| `approval_cases` | Lưu manual-review case, assignment và quyết định của staff. |
 
-- Tạo hồ sơ
-- Xem chi tiết hồ sơ
-- Cập nhật hồ sơ khi còn `DRAFT`
-- Submit hồ sơ
-- Hủy hồ sơ
-- Xem lịch sử trạng thái
-- Chạy CIF/KYC Mock Service độc lập
-- Kiểm tra customer tồn tại và đang `ACTIVE`
-- Kiểm tra KYC `VERIFIED` và chưa hết hạn
-- Trả lỗi `CUSTOMER_NOT_FOUND`, `CUSTOMER_NOT_ACTIVE`, `KYC_NOT_VERIFIED`, `KYC_EXPIRED` và `CIF_KYC_SERVICE_UNAVAILABLE`
-- 69 automated tests pass
+`approval_cases.application_id` có ràng buộc `UNIQUE`, nên mỗi application tối đa có một ApprovalCase.
 
-## Database migration
+Manual-review snapshot nằm tại `account_applications`:
 
-- `V1__create_products_table.sql`: Tạo bảng sản phẩm.
-- `V2__insert_sample_products.sql`: Thêm dữ liệu sản phẩm mẫu.
-- `V3__create_account_applications.sql`: Tạo bảng hồ sơ mở tài khoản và liên kết sản phẩm.
-- `V4__create_application_status_history.sql`: Tạo bảng lưu lịch sử thay đổi trạng thái hồ sơ.
-- `V5__add_kyc_expiry_date_to_account_applications.sql`: Thêm snapshot ngày hết hạn KYC.
-- `V6__create_approval_cases.sql`: Tạo ApprovalCase, unique application và indexes.
-- `V7__add_manual_review_snapshot_to_account_applications.sql`: Thêm `review_required`, `review_reason` và CHECK invariant.
+- `review_required`
+- `review_reason`
 
-## Các bảng chính hiện tại
+CHECK constraint của V7 bảo đảm:
 
-`products`
+- `review_required = true` yêu cầu `review_reason` khác null.
+- `review_required = false` yêu cầu `review_reason` null.
+- `review_required = null` yêu cầu `review_reason` null, để tương thích record cũ chưa có snapshot.
 
-Lưu thông tin các sản phẩm tài khoản ngân hàng.
+Project không có bảng `customers`; customer master data thuộc CIF/KYC Mock Service và application chỉ lưu `customerId` để tham chiếu.
 
-`account_applications`
+## Flyway Migrations
 
-Lưu hồ sơ mở tài khoản của khách hàng.
+- V1: products.
+- V2: sample products.
+- V3: account applications.
+- V4: application status history.
+- V5: KYC expiry snapshot.
+- V6: approval cases.
+- V7: manual-review snapshot.
 
-`application_status_history`
-
-Lưu lịch sử thay đổi trạng thái của từng hồ sơ.
-
-`approval_cases`
-
-Lưu case manual review, staff assignment và quyết định approve/reject. Mỗi application tối đa một case.
-
-Project không có bảng `customers` vì thông tin khách hàng thuộc CIF/KYC Mock Service. Hệ thống chính chỉ lưu `customerId` để tham chiếu.
-
-## Cách chạy hai service
-
-Điều kiện cần có:
-
-- Java 21
-- PostgreSQL
-
-### CIF/KYC Mock Service
+## CIF/KYC Mock Service
 
 Source code: [Mikokoomi/cif-kyc-mock-service](https://github.com/Mikokoomi/cif-kyc-mock-service)
+
+Mock service chạy tại port `8081` và cung cấp:
+
+```http
+GET /api/customers/{customerId}
+```
+
+Main service đọc `reviewRequired/reviewReason` từ response để tách manual review khỏi mandatory rule failure.
+
+## Cách chạy
+
+Yêu cầu: Java 21 và PostgreSQL với database `account_opening`.
+
+### Khởi động CIF/KYC Mock Service
 
 ```powershell
 git clone https://github.com/Mikokoomi/cif-kyc-mock-service.git
@@ -202,23 +200,15 @@ Set-Location .\cif-kyc-mock-service
 .\mvnw.cmd spring-boot:run
 ```
 
-Nếu đã clone CIF/KYC Mock Service trước đó thì chỉ cần mở terminal tại thư mục service và chạy Maven Wrapper.
+### Khởi động Account Opening Service
 
-Mock Service chạy ở `http://localhost:8081` và cung cấp:
-
-```http
-GET /api/customers/{customerId}
-```
-
-### Account Opening
-
-Tạo database có tên `account_opening`, sau đó copy file cấu hình local:
+Copy cấu hình mẫu local:
 
 ```powershell
 Copy-Item src\main\resources\application-local.example.yml src\main\resources\application-local.yml
 ```
 
-Thiết lập biến môi trường trong PowerShell hiện tại:
+Thiết lập biến môi trường trong PowerShell hiện tại. Không ghi password thật vào source code hoặc file cấu hình.
 
 ```powershell
 $env:DB_URL="jdbc:postgresql://localhost:5432/account_opening"
@@ -228,82 +218,38 @@ $env:DB_PASSWORD = [System.Net.NetworkCredential]::new("", $securePassword).Pass
 Remove-Variable securePassword
 ```
 
-Đảm bảo file local có URL của mock service nhưng không chứa credential thật:
-
-```yaml
-integration:
-  cif-kyc:
-    base-url: http://localhost:8081
-```
-
-Chạy test và khởi động ứng dụng bằng Maven Wrapper:
+Đảm bảo base URL của mock service là `http://localhost:8081` trong `application-local.yml`, sau đó chạy:
 
 ```powershell
-.\mvnw.cmd clean test
 .\mvnw.cmd spring-boot:run -Dspring-boot.run.profiles=local
 ```
 
-Sau khi chạy thành công, Swagger UI có thể truy cập tại:
+Swagger UI: `http://localhost:8080/swagger-ui.html`
 
-```text
-http://localhost:8080/swagger-ui/index.html
+## Testing
+
+Chạy regression suite:
+
+```powershell
+.\mvnw.cmd clean test
 ```
 
-## Phạm vi project
+Current regression suite: 136 tests passing.
 
-### Có thực hiện
+## Phạm vi hiện tại
 
-- Khách hàng hiện hữu mở thêm tài khoản
-- Quản lý hồ sơ mở tài khoản
-- Kiểm tra sản phẩm
-- CIF/KYC Mock Service
-- Business Rules: `PRODUCT_ACTIVE` và `KYC_VERIFIED`
+Implemented: existing customer account opening, product validation, account application, CIF/KYC integration, mandatory business rules, processing decision, manual review, ApprovalCase, staff approve/reject và status history.
 
-Core Banking, retry, notification và audit log thuộc phạm vi project nhưng chưa được triển khai ở giai đoạn hiện tại.
+Currently not implemented: Core Banking account creation, retry/idempotency, integration tracking, notification và audit.
 
-### Không thực hiện
+## Quyết định kỹ thuật
 
-- Đăng ký khách hàng mới
-- Xác thực danh tính thật
-- Tích hợp hệ thống ngân hàng thật
-- Frontend phức tạp
-- Chức năng production thực tế
-
-## Một số quyết định kỹ thuật
-
-### Vì sao không có bảng customers?
-
-Thông tin khách hàng thuộc CIF/KYC Mock Service. Project chính chỉ lưu `customerId` để tham chiếu, tránh lưu trùng dữ liệu khách hàng.
-
-### Vì sao dùng UUID?
-
-UUID giúp ID khó đoán hơn, không phụ thuộc vào số tăng dần của database và phù hợp khi sau này hệ thống có nhiều service.
-
-### Vì sao enum lưu dạng string?
-
-Trạng thái được lưu bằng chuỗi để dữ liệu dễ đọc và không bị sai khi thay đổi thứ tự các giá trị trong enum.
-
-### Vì sao history dùng ManyToOne LAZY?
-
-Nhiều bản ghi lịch sử thuộc về một hồ sơ. LAZY giúp chỉ tải thông tin hồ sơ khi thật sự cần, tránh truy vấn dữ liệu không cần thiết.
-
-### Vì sao application và history dùng cùng transaction?
-
-Khi tạo hoặc submit hồ sơ, thay đổi trạng thái và lịch sử phải được lưu cùng nhau. Nếu lưu lịch sử thất bại thì thay đổi hồ sơ cũng phải rollback để dữ liệu không bị thiếu hoặc sai.
-
-## Roadmap cập nhật
-
-- **Tuần 1 — Nghiệp vụ và khởi tạo:** tìm hiểu nghiệp vụ, thiết kế luồng/DB/API, khởi tạo Spring Boot, PostgreSQL, Flyway và Product API cơ bản.
-- **Tuần 2 — Account Application + CIF/KYC Integration:** quản lý hồ sơ, migration, trạng thái/lịch sử, CIF/KYC Mock Service, RestClient, verification, endpoint KYC check, error handling và automated tests.
-- **Tuần 3 — Business Rules:** hoàn thành architecture rule, `PRODUCT_ACTIVE`, `KYC_VERIFIED`, KYC expiry snapshot và endpoint evaluate eligibility.
-- **Tuần 4 — Workflow trạng thái:** hoàn thiện luồng trạng thái và điều phối xử lý hồ sơ.
-- **Tuần 5 — Nhân viên xét duyệt:** hoàn thành ApprovalCase, assignment, approve/reject và đồng bộ status history.
-- **Tuần 6 — Core Banking Mock Service:** tích hợp service giả lập để tạo tài khoản ngân hàng.
-- **Tuần 7 — Reliability:** retry, error handling và idempotency.
-- **Tuần 8 — Notification và Audit Log:** gửi thông báo và lưu dấu vết xử lý.
-
-Việc đổi roadmap chỉ thay đổi cách nhóm và đánh số tiến độ, không thay đổi code nghiệp vụ đã hoàn thành.
+- Customer master data ở CIF/KYC Mock Service, không duplicate trong main database.
+- Application dùng UUID để định danh độc lập với sequence database.
+- Enum được lưu dạng string để dữ liệu dễ đọc và không phụ thuộc thứ tự enum.
+- Status history liên kết `ManyToOne` LAZY với application để chỉ tải application khi cần.
+- Application state change và history được ghi trong cùng transaction để tránh dữ liệu không nhất quán.
 
 ## Documentation
 
-Kiến trúc, phạm vi, workflow, API và trạng thái triển khai của project được duy trì tại `docs/README.md`.
+Kiến trúc, phạm vi, workflow, API và trạng thái triển khai được duy trì tại `docs/README.md`.
