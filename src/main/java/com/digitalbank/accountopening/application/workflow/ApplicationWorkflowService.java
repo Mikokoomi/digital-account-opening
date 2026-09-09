@@ -57,7 +57,9 @@ public class ApplicationWorkflowService {
             case UNDER_REVIEW -> targetStatus == ApplicationStatus.APPROVED
                     || targetStatus == ApplicationStatus.REJECTED;
             case APPROVED -> targetStatus == ApplicationStatus.ACCOUNT_CREATING;
-            case ACCOUNT_CREATING -> targetStatus == ApplicationStatus.COMPLETED;
+            case ACCOUNT_CREATING -> targetStatus == ApplicationStatus.COMPLETED
+                    || targetStatus == ApplicationStatus.RETRY_PENDING;
+            case RETRY_PENDING -> targetStatus == ApplicationStatus.ACCOUNT_CREATING;
             case COMPLETED, REJECTED, CANCELLED, FAILED -> false;
         };
     }

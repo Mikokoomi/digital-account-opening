@@ -20,6 +20,8 @@ Base URL `http://localhost:8080`; application path uses UUID `{applicationId}`. 
 | `POST /api/applications/{id}/evaluate-rules` | SUBMITTED read-only evaluation. |
 | `POST /api/applications/{id}/process` | Mandatory fail: 409 và giữ SUBMITTED; pass + no review: APPROVED; pass + review signal: UNDER_REVIEW. |
 | `POST /api/applications/{id}/create-account` | APPROVED-only provisioning; success returns COMPLETED and account reference. |
+| `POST /api/applications/{id}/retry-account-creation` | Manual retry từ RETRY_PENDING; reuse operation/key và cumulative attempt count. |
+| `GET /api/applications/{id}/integration-requests` | Read-only integration tracking. |
 | `GET /api/health`, `/actuator/health`, `/swagger-ui.html`, `/v3/api-docs` | Operational/OpenAPI endpoints. |
 
 ## 3. Approval APIs
@@ -48,7 +50,9 @@ Contract bổ sung:
 
 ## 5. Core Banking Mock Integration
 
-IMPLEMENTED: main calls `POST http://localhost:8082/api/accounts` after committing `APPROVED → ACCOUNT_CREATING`. Success stores a local reference and commits `ACCOUNT_CREATING → COMPLETED`. Duplicate application maps to `409 BANK_ACCOUNT_ALREADY_EXISTS`; timeout, 5xx or invalid response maps to `503 CORE_BANKING_SERVICE_UNAVAILABLE` and leaves `ACCOUNT_CREATING`. Retry, idempotency and integration tracking are not implemented.
+IMPLEMENTED: main calls `POST http://localhost:8082/api/accounts` with `Idempotency-Key: CREATE_ACCOUNT:<applicationId>`. First create (201) và idempotent replay (200) đều là success. Core Banking binds one key/application/payload to one account; same-key replay returns the existing result, including legacy row recovery.
+
+Main retries only connection/I/O, HTTP 429 và 5xx, with configurable bounded attempts/backoff. HTTP/backoff runs outside DB transactions. HTTP 400, 409 idempotency conflict and invalid response are non-retryable. Exhaustion returns 503 and commits application/integration as `RETRY_PENDING`; manual retry reuses the same record/key. A completed create command is idempotent locally and does not call Core Banking again.
 
 ## 6. Error Catalog
 
@@ -64,3 +68,6 @@ IMPLEMENTED: main calls `POST http://localhost:8082/api/accounts` after committi
 | 503 | `CIF_KYC_SERVICE_UNAVAILABLE` | Technical integration/data-contract failure. |
 | 409 | `ACCOUNT_CREATION_NOT_ALLOWED`, `BANK_ACCOUNT_ALREADY_EXISTS` | Provisioning state/duplicate conflict. |
 | 503 | `CORE_BANKING_SERVICE_UNAVAILABLE` | Core Banking technical/data-contract failure. |
+| 409 | `ACCOUNT_CREATION_IN_PROGRESS`, `ACCOUNT_CREATION_RETRY_NOT_ALLOWED` | Concurrent command hoặc invalid retry state. |
+| 409 | `CORE_BANKING_IDEMPOTENCY_CONFLICT` | Key/application/payload conflict; không retry. |
+| 503 | `CORE_BANKING_RESPONSE_INVALID` | Non-retryable upstream request/data-contract failure. |

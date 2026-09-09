@@ -36,6 +36,8 @@ Approval kết thúc ở `APPROVED`. Endpoint create-account riêng bắt đầu
 
 Phase A commit `ACCOUNT_CREATING`, phase B gọi Core Banking không có transaction, phase C lưu reference và commit `COMPLETED`. Technical/data-contract failure giữ `ACCOUNT_CREATING` vì external account có thể đã được tạo dù response bị mất.
 
-## DEC-010 - Reliability được hoãn
+## DEC-010 - Reliability có giới hạn và quan sát được
 
-Duplicate application hiện trả conflict. Retry, idempotency, integration tracking và reconciliation chưa implement.
+Account creation dùng stable key `CREATE_ACCOUNT:<applicationId>`. Một `IntegrationRequest` đại diện logical operation, không phải từng attempt; mọi automatic/manual attempt reuse record và key đó. Core Banking replay cùng key/payload trả existing account.
+
+Chỉ network/I/O, HTTP 429 và 5xx được retry. Business conflict và data-contract error không retry. Hết bounded retry chuyển `RETRY_PENDING`, không dùng `FAILED` vì external result có thể chưa xác định. Manual retry reuse cùng tracking record/key. HTTP và backoff không nằm trong DB transaction. Scheduled retry và generalized reconciliation chưa thuộc current scope.

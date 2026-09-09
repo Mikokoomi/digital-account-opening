@@ -6,6 +6,9 @@ import com.digitalbank.accountopening.integration.cifkyc.CifKycVerificationError
 import com.digitalbank.accountopening.integration.cifkyc.CifKycVerificationException;
 import com.digitalbank.accountopening.integration.corebanking.CoreBankingClientException;
 import com.digitalbank.accountopening.integration.corebanking.CoreBankingDuplicateApplicationException;
+import com.digitalbank.accountopening.integration.corebanking.CoreBankingIdempotencyConflictException;
+import com.digitalbank.accountopening.integration.corebanking.CoreBankingNonRetryableException;
+import com.digitalbank.accountopening.integration.corebanking.CoreBankingRetryableException;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.validation.FieldError;
@@ -32,6 +35,27 @@ public class GlobalExceptionHandler {
     @ExceptionHandler(CoreBankingClientException.class)
     public ResponseEntity<ErrorResponse> handleCoreBankingClient(CoreBankingClientException exception) {
         return error(HttpStatus.SERVICE_UNAVAILABLE, "Core Banking service is unavailable", "CORE_BANKING_SERVICE_UNAVAILABLE");
+    }
+
+    @ExceptionHandler(CoreBankingRetryableException.class)
+    public ResponseEntity<ErrorResponse> handleCoreBankingRetryable(CoreBankingRetryableException exception) {
+        return error(HttpStatus.SERVICE_UNAVAILABLE, "Core Banking service is unavailable", "CORE_BANKING_SERVICE_UNAVAILABLE");
+    }
+    @ExceptionHandler(CoreBankingIdempotencyConflictException.class)
+    public ResponseEntity<ErrorResponse> handleCoreBankingIdempotencyConflict(CoreBankingIdempotencyConflictException exception) {
+        return error(HttpStatus.CONFLICT, exception.getMessage(), "CORE_BANKING_IDEMPOTENCY_CONFLICT");
+    }
+    @ExceptionHandler(CoreBankingNonRetryableException.class)
+    public ResponseEntity<ErrorResponse> handleCoreBankingNonRetryable(CoreBankingNonRetryableException exception) {
+        return error(HttpStatus.SERVICE_UNAVAILABLE, exception.getMessage(), "CORE_BANKING_RESPONSE_INVALID");
+    }
+    @ExceptionHandler(AccountCreationInProgressException.class)
+    public ResponseEntity<ErrorResponse> handleAccountCreationInProgress(AccountCreationInProgressException exception) {
+        return error(HttpStatus.CONFLICT, exception.getMessage(), "ACCOUNT_CREATION_IN_PROGRESS");
+    }
+    @ExceptionHandler(AccountCreationRetryNotAllowedException.class)
+    public ResponseEntity<ErrorResponse> handleAccountCreationRetryNotAllowed(AccountCreationRetryNotAllowedException exception) {
+        return error(HttpStatus.CONFLICT, exception.getMessage(), "ACCOUNT_CREATION_RETRY_NOT_ALLOWED");
     }
 
     @ExceptionHandler(ProductNotFoundException.class)

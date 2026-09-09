@@ -32,9 +32,11 @@ flowchart TD
     AC --> P[Core Banking Mock — IMPLEMENTED]
     P --> Q{Result}
     Q -- Success --> R[local bank_account, COMPLETED — IMPLEMENTED]
-    Q -- temporary failure --> S[Controlled retry — PLANNED]
+    Q -- retryable failure --> S[Bounded synchronous retry — IMPLEMENTED]
     S --> P
-    Q -- business error/retry exhausted --> T[FAILED — PLANNED]
+    Q -- retry exhausted --> T[RETRY_PENDING — manual retry]
+    T --> AC
+    Q -- business/data-contract error --> U[Integration FAILED; no retry]
 ```
 
 ## 3. Application Lifecycle và State Machine
@@ -52,9 +54,11 @@ stateDiagram-v2
     UNDER_REVIEW --> REJECTED: workflow policy
     APPROVED --> ACCOUNT_CREATING: create-account phase A
     ACCOUNT_CREATING --> COMPLETED: account saved phase C
+    ACCOUNT_CREATING --> RETRY_PENDING: retry exhausted
+    RETRY_PENDING --> ACCOUNT_CREATING: manual retry, same key
 ```
 
-`ApplicationWorkflowService` also enforces `APPROVED → ACCOUNT_CREATING → COMPLETED`. `COMPLETED` is terminal. Technical Core Banking failure leaves the application at `ACCOUNT_CREATING`.
+`ApplicationWorkflowService` enforces `APPROVED → ACCOUNT_CREATING → COMPLETED` và recovery path `ACCOUNT_CREATING → RETRY_PENDING → ACCOUNT_CREATING`. `COMPLETED` is terminal.
 
 ## 4. Allowed State Transitions
 
@@ -81,7 +85,7 @@ IMPLEMENTED:
 
 Staff approval is IMPLEMENTED: routing to `UNDER_REVIEW` creates one `PENDING` case; assignment moves it to `ASSIGNED`; only assigned staff may approve/reject. Approve reevaluates mandatory rules, nhưng không yêu cầu `reviewRequired=false` vì review signal là lý do case tồn tại. Case và application transition hoàn tất trong một transaction.
 
-Account provisioning is a separate operation. Phase A commits `ACCOUNT_CREATING`, phase B calls Core Banking without a database transaction, and phase C atomically stores the local reference and transitions to `COMPLETED`.
+Account provisioning is a separate operation. Phase A commits state/tracking, phase B calls Core Banking and sleeps outside database transactions, and phase C records each attempt/result in its own transaction. All automatic and manual attempts reuse `CREATE_ACCOUNT:<applicationId>`. Exhaustion moves application/integration to `RETRY_PENDING`; success stores one local reference and moves to `COMPLETED`.
 
 ## 7. Exception Overview, Audit and Status History
 

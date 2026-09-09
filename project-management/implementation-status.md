@@ -14,11 +14,13 @@
 - Staff Approval: một ApprovalCase/application; `PENDING → ASSIGNED → APPROVED/REJECTED`; list/detail/filter, assignment và staff decision APIs.
 - Staff decision đồng bộ ApprovalCase + application + status history trong transaction; approve yêu cầu các business rule hiện hành vẫn pass.
 - Core Banking HTTP integration và account provisioning `APPROVED → ACCOUNT_CREATING → COMPLETED`.
+- Stable Core Banking idempotency key, replay-safe create, bounded retry cho technical failures và lost-response recovery.
+- `IntegrationRequest` tracking qua Flyway V9, cumulative attempts, `RETRY_PENDING`, manual retry API và read-only tracking API.
 - Local `bank_accounts` projection qua Flyway V8; Core Banking Mock sở hữu account domain.
-- PostgreSQL/Flyway V1–V8, health, actuator, Swagger/OpenAPI, structured error response.
+- PostgreSQL/Flyway V1–V9, health, actuator, Swagger/OpenAPI, structured error response.
 
 ## PLANNED
 
-- Retry/idempotency, integration tracking, reconciliation, notification, audit, scheduler.
+- Scheduled retry, generalized reconciliation, notification, audit.
 - Advanced rules cần dữ liệu đáng tin cậy: age/DOB policy, ownership duplicate, customer risk.
-- `VALIDATING`, `RETRY_PENDING`.
+- `VALIDATING`.

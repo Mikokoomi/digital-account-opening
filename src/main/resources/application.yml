@@ -25,3 +25,6 @@ management:
 integration:
   core-banking:
     base-url: ${CORE_BANKING_BASE_URL:http://localhost:8082}
+    retry:
+      max-attempts: ${CORE_BANKING_RETRY_MAX_ATTEMPTS:3}
+      backoff-ms: ${CORE_BANKING_RETRY_BACKOFF_MS:200}

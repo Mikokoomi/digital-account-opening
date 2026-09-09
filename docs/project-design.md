@@ -37,4 +37,4 @@ Customer onboarding/tạo CIF, authentication banking production, KYC OCR/biomet
 
 ## 6. Technical Assumptions và Boundaries
 
-KYC snapshot current cần `VERIFIED`, verification timestamp, expiry không trước hôm nay và manual-review snapshot hợp lệ. Core Banking Mock sở hữu account domain; main chỉ lưu local reference. External HTTP call nằm ngoài DB transaction. Technical Core Banking failure giữ `ACCOUNT_CREATING`; retry/idempotency và integration tracking chưa được implement.
+KYC snapshot current cần `VERIFIED`, verification timestamp, expiry không trước hôm nay và manual-review snapshot hợp lệ. Core Banking Mock sở hữu account domain; main chỉ lưu local reference. Một account-creation operation dùng stable idempotency key và một `IntegrationRequest` qua mọi attempt. External HTTP/backoff nằm ngoài DB transaction. Chỉ lỗi network, 429 và 5xx được retry; hết lượt chuyển `RETRY_PENDING`. Business/data-contract errors không retry. Scheduled retry và generalized reconciliation chưa được implement.

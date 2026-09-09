@@ -36,7 +36,9 @@ class ApplicationWorkflowServiceTest {
                 new TransitionCase(ApplicationStatus.UNDER_REVIEW, ApplicationStatus.APPROVED),
                 new TransitionCase(ApplicationStatus.UNDER_REVIEW, ApplicationStatus.REJECTED),
                 new TransitionCase(ApplicationStatus.APPROVED, ApplicationStatus.ACCOUNT_CREATING),
-                new TransitionCase(ApplicationStatus.ACCOUNT_CREATING, ApplicationStatus.COMPLETED)
+                new TransitionCase(ApplicationStatus.ACCOUNT_CREATING, ApplicationStatus.COMPLETED),
+                new TransitionCase(ApplicationStatus.ACCOUNT_CREATING, ApplicationStatus.RETRY_PENDING),
+                new TransitionCase(ApplicationStatus.RETRY_PENDING, ApplicationStatus.ACCOUNT_CREATING)
         );
 
         for (TransitionCase transition : transitions) {
@@ -69,6 +71,7 @@ class ApplicationWorkflowServiceTest {
                 new TransitionCase(ApplicationStatus.APPROVED, ApplicationStatus.SUBMITTED),
                 new TransitionCase(ApplicationStatus.APPROVED, ApplicationStatus.REJECTED),
                 new TransitionCase(ApplicationStatus.ACCOUNT_CREATING, ApplicationStatus.APPROVED),
+                new TransitionCase(ApplicationStatus.RETRY_PENDING, ApplicationStatus.COMPLETED),
                 new TransitionCase(ApplicationStatus.COMPLETED, ApplicationStatus.ACCOUNT_CREATING),
                 new TransitionCase(ApplicationStatus.REJECTED, ApplicationStatus.UNDER_REVIEW),
                 new TransitionCase(ApplicationStatus.CANCELLED, ApplicationStatus.APPROVED),

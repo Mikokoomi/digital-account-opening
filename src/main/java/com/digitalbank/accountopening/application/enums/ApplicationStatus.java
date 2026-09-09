@@ -6,6 +6,7 @@ public enum ApplicationStatus {
     UNDER_REVIEW,
     APPROVED,
     ACCOUNT_CREATING,
+    RETRY_PENDING,
     COMPLETED,
     REJECTED,
     CANCELLED,
