@@ -214,6 +214,7 @@ Project không có bảng `customers`; customer master data thuộc CIF/KYC Mock
 - V9: integration request tracking.
 - V10: audit logs.
 - V11: notifications.
+- V12: notification uniqueness theo `(application_id, type)`.
 
 ## CIF/KYC Mock Service
 

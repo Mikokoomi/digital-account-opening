@@ -19,7 +19,7 @@ class NotificationServiceTest {
     NotificationService service = new NotificationService(notifications, applications, sender, clock);
     AccountApplication application;
 
-    @BeforeEach void setup() { application = new AccountApplication(); application.setApplicationId(UUID.randomUUID()); application.setCustomerId("CUS001"); application.setStatus(ApplicationStatus.APPROVED); when(applications.findById(application.getApplicationId())).thenReturn(Optional.of(application)); }
+    @BeforeEach void setup() { application = new AccountApplication(); application.setApplicationId(UUID.randomUUID()); application.setCustomerId("CUS001"); application.setStatus(ApplicationStatus.APPROVED); when(applications.findById(application.getApplicationId())).thenReturn(Optional.of(application)); when(applications.findByIdForUpdate(application.getApplicationId())).thenReturn(Optional.of(application)); }
 
     @Test void senderSuccessMarksNotificationSent() {
         service.handle(event(NotificationType.APPLICATION_APPROVED));
@@ -43,7 +43,41 @@ class NotificationServiceTest {
     @Test void duplicateBusinessEventIsIgnored() {
         when(notifications.existsByApplicationApplicationIdAndType(application.getApplicationId(), NotificationType.ACCOUNT_OPENED)).thenReturn(true);
         service.handle(event(NotificationType.ACCOUNT_OPENED));
+        verify(applications).findByIdForUpdate(application.getApplicationId());
         verify(notifications, never()).save(any()); verifyNoInteractions(sender);
+    }
+
+    @Test void sequentialDuplicateEventsCreateAndSendOnlyOnce() {
+        when(notifications.existsByApplicationApplicationIdAndType(application.getApplicationId(), NotificationType.ACCOUNT_OPENED))
+                .thenReturn(false, true);
+
+        service.handle(event(NotificationType.ACCOUNT_OPENED));
+        service.handle(event(NotificationType.ACCOUNT_OPENED));
+
+        verify(applications, times(2)).findByIdForUpdate(application.getApplicationId());
+        verify(notifications, times(2)).save(any(Notification.class));
+        verify(sender).send(any(NotificationMessage.class));
+    }
+
+    @Test void sameApplicationAllowsDifferentNotificationTypes() {
+        service.handle(event(NotificationType.APPLICATION_APPROVED));
+        service.handle(event(NotificationType.ACCOUNT_OPENED));
+
+        verify(notifications).existsByApplicationApplicationIdAndType(application.getApplicationId(), NotificationType.APPLICATION_APPROVED);
+        verify(notifications).existsByApplicationApplicationIdAndType(application.getApplicationId(), NotificationType.ACCOUNT_OPENED);
+        verify(sender, times(2)).send(any(NotificationMessage.class));
+    }
+
+    @Test void differentApplicationsAllowSameNotificationType() {
+        AccountApplication other = new AccountApplication();
+        other.setApplicationId(UUID.randomUUID()); other.setCustomerId("CUS002"); other.setStatus(ApplicationStatus.APPROVED);
+        when(applications.findByIdForUpdate(other.getApplicationId())).thenReturn(Optional.of(other));
+
+        service.handle(event(NotificationType.ACCOUNT_OPENED));
+        service.handle(new NotificationRequestedEvent(other.getApplicationId(), other.getCustomerId(),
+                NotificationType.ACCOUNT_OPENED, "Subject", "Message"));
+
+        verify(sender, times(2)).send(any(NotificationMessage.class));
     }
 
     @Test void queryReturnsOldestFirstFromRepository() {

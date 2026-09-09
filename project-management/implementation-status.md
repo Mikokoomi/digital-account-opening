@@ -18,9 +18,9 @@
 - `IntegrationRequest` tracking qua Flyway V9, cumulative attempts, `RETRY_PENDING`, manual retry API và read-only tracking API.
 - Reliability failure-state hardening: definitive rejection → `FAILED`; ambiguous response, retry exhaustion hoặc interrupted backoff → `RETRY_PENDING`; application và integration request luôn đồng bộ.
 - Local `bank_accounts` projection qua Flyway V8; Core Banking Mock sở hữu account domain.
-- PostgreSQL/Flyway V1–V11, health, actuator, Swagger/OpenAPI, structured error response.
+- PostgreSQL/Flyway V1–V12, health, actuator, Swagger/OpenAPI, structured error response.
 - Audit persistence qua Flyway V10, business action/actor/result model và read-only application audit API.
-- Notification persistence qua Flyway V11, `LoggingNotificationSender`, AFTER_COMMIT failure isolation và read-only application notification API.
+- Notification persistence qua Flyway V11/V12, service guard kết hợp DB uniqueness, `LoggingNotificationSender`, AFTER_COMMIT failure isolation và read-only application notification API.
 
 ## PLANNED
 

@@ -25,8 +25,8 @@ public class NotificationService {
     @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT, fallbackExecution = true)
     @Transactional(propagation = Propagation.REQUIRES_NEW)
     public void handle(NotificationRequestedEvent event) {
+        AccountApplication application = findForUpdate(event.applicationId());
         if (notifications.existsByApplicationApplicationIdAndType(event.applicationId(), event.type())) return;
-        AccountApplication application = find(event.applicationId());
         Notification notification = new Notification(); notification.setApplication(application);
         notification.setCustomerId(event.customerId()); notification.setType(event.type());
         notification.setStatus(NotificationStatus.PENDING); notification.setSubject(limit(event.subject(), 200));
@@ -50,5 +50,6 @@ public class NotificationService {
     }
 
     private AccountApplication find(UUID id) { return applications.findById(id).orElseThrow(() -> new ApplicationNotFoundException(id)); }
+    private AccountApplication findForUpdate(UUID id) { return applications.findByIdForUpdate(id).orElseThrow(() -> new ApplicationNotFoundException(id)); }
     private String limit(String value, int length) { return value == null ? null : value.substring(0, Math.min(value.length(), length)); }
 }

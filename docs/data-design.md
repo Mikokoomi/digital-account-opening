@@ -68,8 +68,8 @@ erDiagram
 
 ## 3. Relationships, Keys, Constraints, Indexes
 
-`bank_accounts.application_id` references application và UNIQUE. `external_account_id` và `account_number` cũng UNIQUE. `integration_requests` có UNIQUE `(application_id, integration_type)`, UNIQUE `idempotency_key`, FK application và CHECK `attempt_count >= 0`. `audit_logs` có nullable application FK cùng indexes application/entity. `notifications` có required application FK và application index. Main không lưu balance, transaction hoặc ledger.
+`bank_accounts.application_id` references application và UNIQUE. `external_account_id` và `account_number` cũng UNIQUE. `integration_requests` có UNIQUE `(application_id, integration_type)`, UNIQUE `idempotency_key`, FK application và CHECK `attempt_count >= 0`. `audit_logs` có nullable application FK cùng indexes application/entity. `notifications` có required application FK, application index và UNIQUE `(application_id, type)` để mỗi loại notification chỉ có tối đa một record cho mỗi application. Main không lưu balance, transaction hoặc ledger.
 
 ## 4. Data Lifecycle Notes
 
-Flyway V1–V11/JPA là source of truth; V8 tạo local `bank_accounts`, V9 tạo `integration_requests`, V10 tạo `audit_logs`, V11 tạo `notifications`. Core Banking Mock có database riêng và là owner của account domain.
+Flyway V1–V12/JPA là source of truth; V8 tạo local `bank_accounts`, V9 tạo `integration_requests`, V10 tạo `audit_logs`, V11 tạo `notifications`, V12 thêm UNIQUE `(application_id, type)` cho notification. Core Banking Mock có database riêng và là owner của account domain.

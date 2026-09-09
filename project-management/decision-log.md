@@ -69,3 +69,7 @@ GET API không phải business mutation. Từng Core Banking attempt thuộc `In
 ## DEC-017 - Idempotent replay không tạo business event trùng
 
 Repeated create-account sau `COMPLETED` trả local result, không tạo thêm `ACCOUNT_CREATED` audit hoặc `ACCOUNT_OPENED` notification. Notification service còn có service guard theo application/type.
+
+## DEC-018 - Notification uniqueness được bảo vệ ở service và database
+
+Notification creation khóa row application, kiểm tra existing notification rồi mới insert. Service guard tránh insert/send thừa trong luồng thường; UNIQUE `(application_id, type)` là lớp bảo vệ cuối trước concurrent hoặc alternate write path. Notification `FAILED` không tự tạo row mới vì retry notification chưa thuộc scope.
