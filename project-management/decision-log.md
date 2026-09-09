@@ -42,6 +42,30 @@ Account creation dùng stable key `CREATE_ACCOUNT:<applicationId>`. Một `Integ
 
 Chỉ network/I/O, HTTP 429 và 5xx được retry. Business conflict và data-contract error không retry. Hết bounded retry chuyển `RETRY_PENDING`, không dùng `FAILED` vì external result có thể chưa xác định. Manual retry reuse cùng tracking record/key. HTTP và backoff không nằm trong DB transaction. Scheduled retry và generalized reconciliation chưa thuộc current scope.
 
-## DEC-010 - Trạng thái failure của Core Banking phải phản ánh độ chắc chắn
+## DEC-011 - Trạng thái failure của Core Banking phải phản ánh độ chắc chắn
 
 HTTP 4xx từ Core Banking là definitive rejection nên cả application và integration request chuyển `FAILED`. Response success malformed/incomplete là ambiguous vì external account có thể đã được tạo; trường hợp này chuyển cả hai sang `RETRY_PENDING` để manual recovery với cùng idempotency key. Retry exhaustion và interrupted backoff cũng dùng `RETRY_PENDING`; khi interrupt, thread interrupt flag phải được khôi phục trước khi trả lỗi.
+
+## DEC-012 - Audit và status history có responsibility khác nhau
+
+Status history mô tả application lifecycle; audit trả lời actor đã thực hiện business/system action nào lên object nào, lúc nào và kết quả gì. Không dùng hai loại record thay thế nhau.
+
+## DEC-013 - Audit success cùng transaction với business mutation
+
+Audit persistence là compliance/business trace trong cùng database. Khi audit của mutation thất bại, exception không bị swallow và transaction business được rollback.
+
+## DEC-014 - Notification failure tách khỏi business result
+
+Notification request được xử lý AFTER_COMMIT trong transaction riêng. Sender failure tạo notification `FAILED` nhưng không rollback approval, rejection hoặc completed account.
+
+## DEC-015 - Notification delivery hiện là logging abstraction
+
+`NotificationSender` tách delivery khỏi persistence; implementation hiện tại chỉ log type/application ID, không gọi email, SMS hay push provider.
+
+## DEC-016 - Không audit read và automatic retry attempt
+
+GET API không phải business mutation. Từng Core Banking attempt thuộc `IntegrationRequest`; audit chỉ ghi start, retry pending, manual retry, failure và success milestone.
+
+## DEC-017 - Idempotent replay không tạo business event trùng
+
+Repeated create-account sau `COMPLETED` trả local result, không tạo thêm `ACCOUNT_CREATED` audit hoặc `ACCOUNT_OPENED` notification. Notification service còn có service guard theo application/type.

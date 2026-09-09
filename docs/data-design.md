@@ -9,6 +9,8 @@ erDiagram
     ACCOUNT_APPLICATIONS ||--o| APPROVAL_CASES : requires
     ACCOUNT_APPLICATIONS ||--o| BANK_ACCOUNTS : provisions
     ACCOUNT_APPLICATIONS ||--o{ INTEGRATION_REQUESTS : invokes
+    ACCOUNT_APPLICATIONS ||--o{ AUDIT_LOGS : audited_by
+    ACCOUNT_APPLICATIONS ||--o{ NOTIFICATIONS : notifies
     PRODUCTS { bigint id PK
                varchar product_code UK }
     ACCOUNT_APPLICATIONS { uuid application_id PK
@@ -37,6 +39,18 @@ erDiagram
                            varchar idempotency_key UK
                            varchar status
                            int attempt_count }
+    AUDIT_LOGS { uuid id PK
+                 uuid application_id FK
+                 varchar actor_type
+                 varchar action
+                 varchar result
+                 timestamptz created_at }
+    NOTIFICATIONS { uuid id PK
+                    uuid application_id FK
+                    varchar type
+                    varchar status
+                    timestamptz created_at
+                    timestamptz sent_at }
 ```
 
 ## 2. Entity / Table Definitions
@@ -49,11 +63,13 @@ erDiagram
 | `approval_cases` | UUID ID, unique application FK, case status, assignment/review/decision data và timestamps. |
 | `bank_accounts` | Local projection: unique application/external account/account number, status và opened time. |
 | `integration_requests` | Logical external operation: unique application/type, unique stable key, status, cumulative attempts, last HTTP/error, external reference và timestamps. |
+| `audit_logs` | UUID, actor type/id, action, entity type/id, optional application FK, result, bounded details và created time. |
+| `notifications` | UUID, application FK, customer ID, type/status, subject/message, created/sent time và bounded failure reason. |
 
 ## 3. Relationships, Keys, Constraints, Indexes
 
-`bank_accounts.application_id` references application và UNIQUE. `external_account_id` và `account_number` cũng UNIQUE. `integration_requests` có UNIQUE `(application_id, integration_type)`, UNIQUE `idempotency_key`, FK application và CHECK `attempt_count >= 0`. Main không lưu balance, transaction hoặc ledger.
+`bank_accounts.application_id` references application và UNIQUE. `external_account_id` và `account_number` cũng UNIQUE. `integration_requests` có UNIQUE `(application_id, integration_type)`, UNIQUE `idempotency_key`, FK application và CHECK `attempt_count >= 0`. `audit_logs` có nullable application FK cùng indexes application/entity. `notifications` có required application FK và application index. Main không lưu balance, transaction hoặc ledger.
 
 ## 4. Data Lifecycle Notes
 
-Flyway V1–V9/JPA là source of truth; V8 tạo local `bank_accounts`, V9 tạo `integration_requests`. Core Banking Mock có database riêng và là owner của account domain. `notifications`, `audit_logs` vẫn PLANNED.
+Flyway V1–V11/JPA là source of truth; V8 tạo local `bank_accounts`, V9 tạo `integration_requests`, V10 tạo `audit_logs`, V11 tạo `notifications`. Core Banking Mock có database riêng và là owner của account domain.

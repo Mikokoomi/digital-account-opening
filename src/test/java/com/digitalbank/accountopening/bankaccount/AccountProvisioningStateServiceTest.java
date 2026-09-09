@@ -6,6 +6,9 @@ import com.digitalbank.accountopening.application.workflow.ApplicationWorkflowSe
 import com.digitalbank.accountopening.common.exception.*;
 import com.digitalbank.accountopening.integration.corebanking.*;
 import com.digitalbank.accountopening.integration.tracking.*;
+import com.digitalbank.accountopening.audit.*;
+import com.digitalbank.accountopening.notification.*;
+import org.springframework.context.ApplicationEventPublisher;
 import org.junit.jupiter.api.*;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.*;
@@ -19,23 +22,27 @@ import static org.mockito.Mockito.*;
 class AccountProvisioningStateServiceTest {
     @Mock AccountApplicationRepository applications; @Mock BankAccountRepository accounts;
     @Mock IntegrationRequestRepository integrations; @Mock ApplicationStatusHistoryRepository history;
+    @Mock AuditLogService auditLogService; @Mock ApplicationEventPublisher events;
     Clock clock=Clock.fixed(Instant.parse("2026-09-09T02:00:00Z"),ZoneOffset.UTC);
     AccountProvisioningStateService service;
-    @BeforeEach void setup(){service=new AccountProvisioningStateService(applications,accounts,integrations,new ApplicationWorkflowService(history),clock);}
+    @BeforeEach void setup(){service=new AccountProvisioningStateService(applications,accounts,integrations,new ApplicationWorkflowService(history),auditLogService,events,clock);}
 
     @Test void prepareInitialCreatesStableOperationAndMovesToAccountCreating(){
         AccountApplication a=application(ApplicationStatus.APPROVED); when(applications.findById(a.getApplicationId())).thenReturn(Optional.of(a));
         when(integrations.findByApplicationApplicationIdAndIntegrationType(a.getApplicationId(),IntegrationType.CORE_BANKING_CREATE_ACCOUNT)).thenReturn(Optional.empty());
+        when(integrations.save(any(IntegrationRequest.class))).thenAnswer(invocation->{IntegrationRequest saved=invocation.getArgument(0);if(saved.getId()==null)saved.setId(UUID.randomUUID());return saved;});
         var result=service.prepareInitial(a.getApplicationId());
         assertFalse(result.alreadyCompleted()); assertEquals("CREATE_ACCOUNT:"+a.getApplicationId(),result.context().idempotencyKey());
         assertEquals(ApplicationStatus.ACCOUNT_CREATING,a.getStatus());
         verify(integrations).save(argThat(x->x.getAttemptCount()==0&&x.getStatus()==IntegrationStatus.IN_PROGRESS));
+        verify(auditLogService).record(eq(a),eq(AuditActorType.SYSTEM),eq("SYSTEM"),eq(AuditAction.ACCOUNT_CREATION_STARTED),
+                eq("INTEGRATION_REQUEST"),any(),eq(AuditResult.PENDING),any());
     }
     @Test void completedRequestReturnsExistingLocalAccountWithoutTransition(){
         AccountApplication a=application(ApplicationStatus.COMPLETED); BankAccount b=bankAccount(a);
         when(applications.findById(a.getApplicationId())).thenReturn(Optional.of(a)); when(accounts.findByApplicationApplicationId(a.getApplicationId())).thenReturn(Optional.of(b));
         var result=service.prepareInitial(a.getApplicationId()); assertTrue(result.alreadyCompleted()); assertEquals("ACC-1",result.completed().accountNumber());
-        verifyNoInteractions(integrations,history);
+        verifyNoInteractions(integrations,history,auditLogService,events);
     }
     @Test void accountCreatingRequestIsRejectedAsInProgress(){
         AccountApplication a=application(ApplicationStatus.ACCOUNT_CREATING); when(applications.findById(a.getApplicationId())).thenReturn(Optional.of(a));
@@ -47,6 +54,8 @@ class AccountProvisioningStateServiceTest {
         when(integrations.findByApplicationApplicationIdAndIntegrationType(a.getApplicationId(),IntegrationType.CORE_BANKING_CREATE_ACCOUNT)).thenReturn(Optional.of(r));
         var result=service.prepareRetry(a.getApplicationId()); assertEquals(r.getId(),result.integrationId()); assertEquals(r.getIdempotencyKey(),result.idempotencyKey());
         assertEquals(ApplicationStatus.ACCOUNT_CREATING,a.getStatus()); assertEquals(IntegrationStatus.IN_PROGRESS,r.getStatus());
+        verify(auditLogService).record(eq(a),eq(AuditActorType.SYSTEM),eq("SYSTEM"),eq(AuditAction.ACCOUNT_CREATION_RETRY_STARTED),
+                eq("INTEGRATION_REQUEST"),eq(r.getId().toString()),eq(AuditResult.PENDING),any());
     }
     @Test void beforeAttemptIsCumulative(){
         AccountApplication a=application(ApplicationStatus.ACCOUNT_CREATING); IntegrationRequest r=integration(a,IntegrationStatus.IN_PROGRESS); r.setAttemptCount(3);
@@ -56,6 +65,8 @@ class AccountProvisioningStateServiceTest {
         AccountApplication a=application(ApplicationStatus.ACCOUNT_CREATING); IntegrationRequest r=integration(a,IntegrationStatus.IN_PROGRESS);
         when(applications.findById(a.getApplicationId())).thenReturn(Optional.of(a)); when(integrations.findById(r.getId())).thenReturn(Optional.of(r));
         service.exhaust(a.getApplicationId(),r.getId()); assertEquals(ApplicationStatus.RETRY_PENDING,a.getStatus()); assertEquals(IntegrationStatus.RETRY_PENDING,r.getStatus());
+        verify(auditLogService).record(eq(a),eq(AuditActorType.SYSTEM),eq("SYSTEM"),eq(AuditAction.ACCOUNT_CREATION_RETRY_PENDING),
+                eq("INTEGRATION_REQUEST"),eq(r.getId().toString()),eq(AuditResult.PENDING),any());
     }
     @Test void definitiveFailureMovesApplicationAndOperationToFailed(){
         AccountApplication a=application(ApplicationStatus.ACCOUNT_CREATING); IntegrationRequest r=integration(a,IntegrationStatus.IN_PROGRESS);
@@ -64,6 +75,8 @@ class AccountProvisioningStateServiceTest {
         assertEquals(ApplicationStatus.FAILED,a.getStatus()); assertEquals(IntegrationStatus.FAILED,r.getStatus());
         assertEquals("CORE_BANKING_REQUEST_REJECTED",r.getLastErrorCode());
         verify(history).save(argThat(h->h.getFromStatus()==ApplicationStatus.ACCOUNT_CREATING&&h.getToStatus()==ApplicationStatus.FAILED));
+        verify(auditLogService).record(eq(a),eq(AuditActorType.SYSTEM),eq("SYSTEM"),eq(AuditAction.ACCOUNT_CREATION_FAILED),
+                eq("INTEGRATION_REQUEST"),eq(r.getId().toString()),eq(AuditResult.FAILED),any());
     }
     @Test void ambiguousResponseMovesApplicationAndOperationToRetryPending(){
         AccountApplication a=application(ApplicationStatus.ACCOUNT_CREATING); IntegrationRequest r=integration(a,IntegrationStatus.IN_PROGRESS);
@@ -87,6 +100,9 @@ class AccountProvisioningStateServiceTest {
         var result=service.complete(a.getApplicationId(),r.getId(),external);
         assertEquals(ApplicationStatus.COMPLETED,result.applicationStatus()); assertEquals(IntegrationStatus.SUCCEEDED,r.getStatus());
         verify(accounts).save(argThat(x->x.getAccountNumber().equals("ACC-1")));
+        verify(auditLogService).record(eq(a),eq(AuditActorType.SYSTEM),eq("SYSTEM"),eq(AuditAction.ACCOUNT_CREATED),
+                eq("BANK_ACCOUNT"),eq(external.accountId().toString()),eq(AuditResult.SUCCESS),any());
+        verify(events).publishEvent(any(NotificationRequestedEvent.class));
     }
     private AccountApplication application(ApplicationStatus status){AccountApplication a=new AccountApplication();a.setApplicationId(UUID.randomUUID());a.setCustomerId("CUS001");a.setProductCode("P");a.setStatus(status);return a;}
     private IntegrationRequest integration(AccountApplication a,IntegrationStatus status){IntegrationRequest r=new IntegrationRequest();r.setId(UUID.randomUUID());r.setApplication(a);r.setIntegrationType(IntegrationType.CORE_BANKING_CREATE_ACCOUNT);r.setIdempotencyKey("CREATE_ACCOUNT:"+a.getApplicationId());r.setStatus(status);r.setCreatedAt(OffsetDateTime.now(clock));r.setUpdatedAt(OffsetDateTime.now(clock));return r;}

@@ -88,6 +88,8 @@ Staff approval is IMPLEMENTED: routing to `UNDER_REVIEW` creates one `PENDING` c
 
 Account provisioning là operation riêng. Phase A commit state/tracking, phase B gọi Core Banking và backoff ngoài database transaction, phase C lưu từng attempt/result trong transaction riêng. Mọi automatic/manual attempt reuse `CREATE_ACCOUNT:<applicationId>`. Retry exhaustion, ambiguous response và interrupted backoff chuyển cả application/integration sang `RETRY_PENDING`; definitive 4xx rejection chuyển cả hai sang `FAILED`; success lưu một local reference và chuyển sang `COMPLETED`.
 
-## 7. Exception Overview, Audit and Status History
+## 7. Audit, Notification và Status History
 
-Business KYC failures do not persist a success snapshot. Technical CIF/KYC failures return 503 and are not customer rejection. `ApplicationStatusHistory` is currently written for create, submit, cancel, and process transitions. AuditLog is PLANNED; history/audit are cross-cutting business-event concerns, not end-of-flow tasks.
+Business KYC failures không lưu success snapshot; technical CIF/KYC failures trả 503 và không phải customer rejection. `ApplicationStatusHistory` chỉ mô tả lifecycle transition. `AuditLog` ghi actor/action/entity/result cho create, submit, KYC result, process, approval case và account provisioning milestones trong transaction business tương ứng. Automatic retry attempt không tạo audit riêng vì `IntegrationRequest` là owner dữ liệu attempt.
+
+Approval/rejection/account completion publish notification request trong transaction; handler chỉ chạy `AFTER_COMMIT`. Delivery logging thành công tạo `SENT`; sender failure tạo `FAILED` nhưng application/case/account vẫn giữ kết quả đã commit. Repeated completed create không phát business event mới.

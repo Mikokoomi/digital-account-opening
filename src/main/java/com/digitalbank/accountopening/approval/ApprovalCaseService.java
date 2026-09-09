@@ -4,6 +4,8 @@ import com.digitalbank.accountopening.application.AccountApplication;
 import com.digitalbank.accountopening.application.enums.ApplicationStatus;
 import com.digitalbank.accountopening.application.rule.ApplicationRuleEvaluationService;
 import com.digitalbank.accountopening.application.workflow.ApplicationWorkflowService;
+import com.digitalbank.accountopening.audit.*;
+import com.digitalbank.accountopening.notification.*;
 import com.digitalbank.accountopening.approval.dto.ApprovalCaseResponse;
 import com.digitalbank.accountopening.common.exception.ApplicationNotUnderReviewException;
 import com.digitalbank.accountopening.common.exception.ManualReviewDataInvalidException;
@@ -15,6 +17,7 @@ import com.digitalbank.accountopening.common.exception.ApprovalCaseNotFoundExcep
 import com.digitalbank.accountopening.common.exception.ApprovalCaseStaffMismatchException;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.stereotype.Service;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.Clock;
@@ -29,16 +32,22 @@ public class ApprovalCaseService {
     private final ApplicationWorkflowService applicationWorkflowService;
     private final ApplicationRuleEvaluationService applicationRuleEvaluationService;
     private final Clock clock;
+    private final AuditLogService auditLogService;
+    private final ApplicationEventPublisher events;
 
     public ApprovalCaseService(
             ApprovalCaseRepository approvalCaseRepository,
             ApplicationWorkflowService applicationWorkflowService,
             ApplicationRuleEvaluationService applicationRuleEvaluationService,
+            AuditLogService auditLogService,
+            ApplicationEventPublisher events,
             Clock clock
     ) {
         this.approvalCaseRepository = approvalCaseRepository;
         this.applicationWorkflowService = applicationWorkflowService;
         this.applicationRuleEvaluationService = applicationRuleEvaluationService;
+        this.auditLogService = auditLogService;
+        this.events = events;
         this.clock = clock;
     }
 
@@ -65,7 +74,10 @@ public class ApprovalCaseService {
         approvalCase.setUpdatedAt(now);
 
         try {
-            return approvalCaseRepository.saveAndFlush(approvalCase);
+            ApprovalCase saved = approvalCaseRepository.saveAndFlush(approvalCase);
+            auditLogService.record(application, AuditActorType.SYSTEM, "SYSTEM", AuditAction.APPROVAL_CASE_CREATED,
+                    "APPROVAL_CASE", saved.getCaseId().toString(), AuditResult.SUCCESS, "Approval case created");
+            return saved;
         } catch (DataIntegrityViolationException exception) {
             throw new ApprovalCaseAlreadyExistsException(applicationId);
         }
@@ -110,6 +122,9 @@ public class ApprovalCaseService {
         approvalCase.setAssignedAt(now);
         approvalCase.setUpdatedAt(now);
         approvalCase.setStatus(ApprovalCaseStatus.ASSIGNED);
+        auditLogService.record(approvalCase.getApplication(), AuditActorType.STAFF, staffId.trim(),
+                AuditAction.APPROVAL_CASE_ASSIGNED, "APPROVAL_CASE", caseId.toString(),
+                AuditResult.SUCCESS, "Assigned to " + staffId.trim());
         return toResponse(approvalCase);
     }
 
@@ -127,6 +142,12 @@ public class ApprovalCaseService {
                 "Application approved by staff"
         );
         completeDecision(approvalCase, ApprovalCaseStatus.APPROVED, null);
+        auditLogService.record(approvalCase.getApplication(), AuditActorType.STAFF, normalizedStaffId,
+                AuditAction.APPROVAL_CASE_APPROVED, "APPROVAL_CASE", caseId.toString(),
+                AuditResult.SUCCESS, "Application approved by staff");
+        events.publishEvent(new NotificationRequestedEvent(approvalCase.getApplication().getApplicationId(),
+                approvalCase.getApplication().getCustomerId(), NotificationType.APPLICATION_APPROVED,
+                "Application approved", "Your account opening application has been approved."));
         return toResponse(approvalCase);
     }
 
@@ -142,6 +163,12 @@ public class ApprovalCaseService {
         );
         approvalCase.getApplication().setRejectReason(normalizedReason);
         completeDecision(approvalCase, ApprovalCaseStatus.REJECTED, normalizedReason);
+        auditLogService.record(approvalCase.getApplication(), AuditActorType.STAFF, staffId.trim(),
+                AuditAction.APPROVAL_CASE_REJECTED, "APPROVAL_CASE", caseId.toString(),
+                AuditResult.SUCCESS, normalizedReason);
+        events.publishEvent(new NotificationRequestedEvent(approvalCase.getApplication().getApplicationId(),
+                approvalCase.getApplication().getCustomerId(), NotificationType.APPLICATION_REJECTED,
+                "Application rejected", "Your account opening application has been rejected."));
         return toResponse(approvalCase);
     }
 

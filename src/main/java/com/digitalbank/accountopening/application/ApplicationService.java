@@ -5,6 +5,8 @@ import com.digitalbank.accountopening.application.rule.ApplicationRuleEvaluation
 import com.digitalbank.accountopening.application.rule.RuleEvaluationResult;
 import com.digitalbank.accountopening.application.workflow.ApplicationWorkflowService;
 import com.digitalbank.accountopening.approval.ApprovalCaseService;
+import com.digitalbank.accountopening.audit.*;
+import com.digitalbank.accountopening.notification.*;
 
 import com.digitalbank.accountopening.application.dto.ApplicationResponse;
 import com.digitalbank.accountopening.application.dto.ApplicationHistoryResponse;
@@ -29,6 +31,7 @@ import com.digitalbank.accountopening.product.ProductRepository;
 import com.digitalbank.accountopening.integration.cifkyc.CifKycVerificationResult;
 import com.digitalbank.accountopening.integration.cifkyc.CifKycVerificationService;
 import org.springframework.stereotype.Service;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.transaction.annotation.Transactional;
 import com.digitalbank.accountopening.common.exception.KycAlreadyVerifiedException;
 
@@ -56,6 +59,8 @@ public class ApplicationService {
     private final CifKycVerificationService cifKycVerificationService;
     private final ApplicationWorkflowService applicationWorkflowService;
     private final ApprovalCaseService approvalCaseService;
+    private final AuditLogService auditLogService;
+    private final ApplicationEventPublisher events;
 
     private final Clock clock;
 
@@ -68,6 +73,8 @@ public class ApplicationService {
             ApplicationRuleEvaluationService applicationRuleEvaluationService,
             ApplicationWorkflowService applicationWorkflowService,
             ApprovalCaseService approvalCaseService,
+            AuditLogService auditLogService,
+            ApplicationEventPublisher events,
             Clock clock
     ) {
         this.applicationRepository = applicationRepository;
@@ -78,6 +85,8 @@ public class ApplicationService {
         this.applicationRuleEvaluationService = applicationRuleEvaluationService;
         this.applicationWorkflowService = applicationWorkflowService;
         this.approvalCaseService = approvalCaseService;
+        this.auditLogService = auditLogService;
+        this.events = events;
         this.clock = clock;
     }
 
@@ -106,6 +115,9 @@ public class ApplicationService {
         history.setChangedBy(customerId);
         history.setReason("Application created");
         historyRepository.save(history);
+        auditLogService.record(savedApplication, AuditActorType.CUSTOMER, customerId,
+                AuditAction.APPLICATION_CREATED, "APPLICATION", savedApplication.getApplicationId().toString(),
+                AuditResult.SUCCESS, "Application created");
 
         return applicationMapper.toResponse(savedApplication, product);
     }
@@ -150,6 +162,9 @@ public class ApplicationService {
                 application.getCustomerId(),
                 "Application submitted"
         );
+        auditLogService.record(application, AuditActorType.CUSTOMER, application.getCustomerId(),
+                AuditAction.APPLICATION_SUBMITTED, "APPLICATION", applicationId.toString(),
+                AuditResult.SUCCESS, "Application submitted");
 
         return applicationMapper.toResponse(application, product);
     }
@@ -197,9 +212,14 @@ public class ApplicationService {
             throw new KycAlreadyVerifiedException();
         }
 
-        CifKycVerificationResult verificationResult = cifKycVerificationService.verify(
-                application.getCustomerId()
-        );
+        CifKycVerificationResult verificationResult;
+        try {
+            verificationResult = cifKycVerificationService.verify(application.getCustomerId());
+        } catch (RuntimeException failure) {
+            auditLogService.recordFailure(applicationId, AuditActorType.SYSTEM, "SYSTEM",
+                    AuditAction.KYC_CHECK_FAILED, failure.getClass().getSimpleName());
+            throw failure;
+        }
 
         application.setKycStatus(verificationResult.kycStatus());
         application.setCifVerifiedAt(OffsetDateTime.now(clock));
@@ -207,6 +227,9 @@ public class ApplicationService {
         application.setReviewRequired(verificationResult.reviewRequired());
         application.setReviewReason(verificationResult.reviewReason());
         applicationRepository.save(application);
+        auditLogService.record(application, AuditActorType.SYSTEM, "SYSTEM",
+                AuditAction.KYC_CHECK_SUCCEEDED, "APPLICATION", applicationId.toString(),
+                AuditResult.SUCCESS, "KYC verification succeeded");
 
         return new ApplicationKycVerificationResponse(
                 applicationId,
@@ -270,6 +293,14 @@ public class ApplicationService {
                     application,
                     application.getReviewReason().name()
             );
+        }
+        auditLogService.record(application, AuditActorType.SYSTEM, "SYSTEM",
+                AuditAction.APPLICATION_PROCESSED, "APPLICATION", applicationId.toString(),
+                AuditResult.SUCCESS, "Application processed to " + targetStatus);
+        if (targetStatus == ApplicationStatus.APPROVED) {
+            events.publishEvent(new NotificationRequestedEvent(applicationId, application.getCustomerId(),
+                    NotificationType.APPLICATION_APPROVED, "Application approved",
+                    "Your account opening application has been approved."));
         }
 
         return applicationMapper.toResponse(application, findProduct(application.getProductCode()));

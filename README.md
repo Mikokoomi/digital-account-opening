@@ -82,6 +82,14 @@ Mandatory conditions
 - Lỗi Core Banking từ chối dứt khoát (HTTP 4xx không retry, gồm idempotency conflict) chuyển cả hai sang `FAILED`; không để application mắc kẹt ở `ACCOUNT_CREATING`.
 - Core Banking trả lại cùng account cho replay cùng key/payload; gọi lại create-account sau `COMPLETED` trả local result và không gọi upstream.
 
+### Audit và Notification
+
+- `audit_logs` ghi WHO/WHAT/WHICH/WHEN/RESULT cho các business milestone; audit khác status history và không ghi GET hoặc từng automatic retry attempt.
+- Audit success nằm cùng transaction với business mutation; audit persistence failure làm transaction rollback.
+- Notification lưu ba loại `APPLICATION_APPROVED`, `APPLICATION_REJECTED`, `ACCOUNT_OPENED` với trạng thái `PENDING/SENT/FAILED`.
+- Delivery hiện dùng `LoggingNotificationSender`, chạy sau business commit; sender failure chỉ chuyển notification thành `FAILED`, không rollback approval/rejection/account completion.
+- Repeated create-account sau `COMPLETED` không tạo thêm audit hoặc notification.
+
 ## Luồng nghiệp vụ
 
 ```text
@@ -136,6 +144,8 @@ SUBMITTED        reviewRequired?
 | POST | `/api/applications/{applicationId}/create-account` | Tạo Core Banking account cho application `APPROVED` |
 | POST | `/api/applications/{applicationId}/retry-account-creation` | Retry thủ công khi application `RETRY_PENDING` |
 | GET | `/api/applications/{applicationId}/integration-requests` | Xem tracking của external operations |
+| GET | `/api/applications/{applicationId}/audit-logs` | Xem audit business action theo thứ tự thời gian |
+| GET | `/api/applications/{applicationId}/notifications` | Xem notification delivery theo thứ tự thời gian |
 | GET | `/api/approval-cases` | Danh sách case; lọc tùy chọn theo `status`, `assignedTo` |
 | GET | `/api/approval-cases/{caseId}` | Xem chi tiết approval case |
 | PATCH | `/api/approval-cases/{caseId}/assign` | Assign case `PENDING` cho staff |
@@ -173,6 +183,8 @@ Các transition đang được sử dụng gồm `DRAFT → SUBMITTED`, `DRAFT/S
 | `approval_cases` | Lưu manual-review case, assignment và quyết định của staff. |
 | `bank_accounts` | Local reference tới account do Core Banking sở hữu. |
 | `integration_requests` | Một record cho mỗi logical external operation; lưu stable key, trạng thái và cumulative attempt count. |
+| `audit_logs` | Business/system action trace, actor, object, result và timestamp. |
+| `notifications` | Customer outcome notification và delivery status. |
 
 `approval_cases.application_id` có ràng buộc `UNIQUE`, nên mỗi application tối đa có một ApprovalCase.
 
@@ -200,6 +212,8 @@ Project không có bảng `customers`; customer master data thuộc CIF/KYC Mock
 - V7: manual-review snapshot.
 - V8: local bank-account references.
 - V9: integration request tracking.
+- V10: audit logs.
+- V11: notifications.
 
 ## CIF/KYC Mock Service
 
@@ -267,13 +281,13 @@ Chạy regression suite:
 .\mvnw.cmd clean test
 ```
 
-Current regression suite: 159 tests passing.
+Current regression suite được xác nhận bằng `./mvnw.cmd clean test`; test count tăng cùng audit/notification coverage.
 
 ## Phạm vi hiện tại
 
-Implemented: existing customer account opening, product validation, CIF/KYC, mandatory rules, manual review, staff approval, Core Banking integration, idempotent account provisioning, bounded retry, integration tracking, manual recovery, local account reference và status history.
+Implemented: existing customer account opening, product validation, CIF/KYC, mandatory rules, manual review, staff approval, Core Banking integration, idempotent account provisioning, bounded retry, integration tracking, manual recovery, local account reference, status history, audit logging và notification persistence/logging delivery.
 
-Currently not implemented: scheduled retry, generalized reconciliation, notification và audit.
+Currently not implemented: real email/SMS/push, notification retry scheduler, scheduled account retry, generalized reconciliation, Kafka/RabbitMQ và authentication/RBAC.
 
 ## Quyết định kỹ thuật
 

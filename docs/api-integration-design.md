@@ -22,6 +22,8 @@ Base URL `http://localhost:8080`; application path uses UUID `{applicationId}`. 
 | `POST /api/applications/{id}/create-account` | APPROVED-only provisioning; success returns COMPLETED and account reference. |
 | `POST /api/applications/{id}/retry-account-creation` | Manual retry từ RETRY_PENDING; reuse operation/key và cumulative attempt count. |
 | `GET /api/applications/{id}/integration-requests` | Read-only integration tracking. |
+| `GET /api/applications/{id}/audit-logs` | Read-only business/system audit, oldest first. |
+| `GET /api/applications/{id}/notifications` | Read-only notification delivery records, oldest first. |
 | `GET /api/health`, `/actuator/health`, `/swagger-ui.html`, `/v3/api-docs` | Operational/OpenAPI endpoints. |
 
 ## 3. Approval APIs
@@ -54,7 +56,11 @@ IMPLEMENTED: main calls `POST http://localhost:8082/api/accounts` with `Idempote
 
 Main chỉ automatic retry connection/I/O, HTTP 429 và 5xx, với bounded attempts/backoff có cấu hình. HTTP/backoff chạy ngoài DB transaction. HTTP 4xx (gồm 409 idempotency conflict) là definitive failure: application và integration request cùng chuyển `FAILED`. Response 2xx malformed/incomplete là ambiguous result nên không tự retry nhưng chuyển cả hai sang `RETRY_PENDING` để manual recovery bằng cùng record/key. Retry exhaustion hoặc interrupted backoff cũng lưu `RETRY_PENDING`; interrupt flag được restore. Create command đã hoàn tất là idempotent tại local và không gọi Core Banking lại.
 
-## 6. Error Catalog
+## 6. Audit và Notification nội bộ
+
+Audit là persistence nội bộ cùng database, không có public write API. Audit failure không bị swallow và có thể rollback business transaction. Notification dùng `NotificationSender` abstraction với `LoggingNotificationSender`; request được xử lý sau commit trong transaction riêng. Sender exception được lưu thành `FAILED` và không rollback business result. Không có email/SMS/push thật, broker hoặc retry scheduler.
+
+## 7. Error Catalog
 
 | HTTP | Code | Meaning |
 |---|---|---|

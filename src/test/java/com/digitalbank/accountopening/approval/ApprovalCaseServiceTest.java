@@ -18,6 +18,9 @@ import com.digitalbank.accountopening.common.exception.ApprovalCaseAssignmentNot
 import com.digitalbank.accountopening.common.exception.ApprovalCaseDecisionNotAllowedException;
 import com.digitalbank.accountopening.common.exception.ApprovalCaseNotFoundException;
 import com.digitalbank.accountopening.common.exception.ApprovalCaseStaffMismatchException;
+import com.digitalbank.accountopening.audit.*;
+import com.digitalbank.accountopening.notification.*;
+import org.springframework.context.ApplicationEventPublisher;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -37,6 +40,7 @@ import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.argThat;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -54,6 +58,8 @@ class ApprovalCaseServiceTest {
 
     @Mock
     private ApplicationRuleEvaluationService applicationRuleEvaluationService;
+    @Mock private AuditLogService auditLogService;
+    @Mock private ApplicationEventPublisher events;
 
     private ApprovalCaseService approvalCaseService;
 
@@ -63,6 +69,8 @@ class ApprovalCaseServiceTest {
                 approvalCaseRepository,
                 new ApplicationWorkflowService(historyRepository),
                 applicationRuleEvaluationService,
+                auditLogService,
+                events,
                 Clock.fixed(TEST_INSTANT, ZoneOffset.UTC)
         );
     }
@@ -73,7 +81,11 @@ class ApprovalCaseServiceTest {
         when(approvalCaseRepository.existsByApplicationApplicationId(application.getApplicationId()))
                 .thenReturn(false);
         when(approvalCaseRepository.saveAndFlush(any(ApprovalCase.class)))
-                .thenAnswer(invocation -> invocation.getArgument(0));
+                .thenAnswer(invocation -> {
+                    ApprovalCase saved = invocation.getArgument(0);
+                    saved.setCaseId(UUID.randomUUID());
+                    return saved;
+                });
 
         ApprovalCase result = approvalCaseService.createForManualReview(application, "Rule failed");
 
@@ -82,6 +94,9 @@ class ApprovalCaseServiceTest {
         assertEquals("Rule failed", result.getReviewReason());
         assertEquals(OffsetDateTime.ofInstant(TEST_INSTANT, ZoneOffset.UTC), result.getCreatedAt());
         assertEquals(result.getCreatedAt(), result.getUpdatedAt());
+        verify(auditLogService).record(eq(application),eq(AuditActorType.SYSTEM),eq("SYSTEM"),
+                eq(AuditAction.APPROVAL_CASE_CREATED),eq("APPROVAL_CASE"),eq(result.getCaseId().toString()),
+                eq(AuditResult.SUCCESS),any());
     }
 
     @Test
@@ -134,6 +149,9 @@ class ApprovalCaseServiceTest {
         assertEquals(ApprovalCaseStatus.ASSIGNED, response.status());
         assertEquals("STAFF001", response.assignedTo());
         assertEquals(OffsetDateTime.ofInstant(TEST_INSTANT, ZoneOffset.UTC), response.assignedAt());
+        verify(auditLogService).record(eq(approvalCase.getApplication()), eq(AuditActorType.STAFF), eq("STAFF001"),
+                eq(AuditAction.APPROVAL_CASE_ASSIGNED), eq("APPROVAL_CASE"), eq(approvalCase.getCaseId().toString()),
+                eq(AuditResult.SUCCESS), any());
     }
 
     @Test
@@ -176,6 +194,9 @@ class ApprovalCaseServiceTest {
                 "STAFF001",
                 "Application approved by staff"
         )));
+        verify(auditLogService).record(eq(approvalCase.getApplication()), eq(AuditActorType.STAFF), eq("STAFF001"),
+                eq(AuditAction.APPROVAL_CASE_APPROVED), eq("APPROVAL_CASE"), any(), eq(AuditResult.SUCCESS), any());
+        verify(events).publishEvent(any(NotificationRequestedEvent.class));
     }
 
     @Test
@@ -200,6 +221,10 @@ class ApprovalCaseServiceTest {
                 "STAFF001",
                 "Missing required evidence"
         )));
+        verify(auditLogService).record(eq(approvalCase.getApplication()), eq(AuditActorType.STAFF), eq("STAFF001"),
+                eq(AuditAction.APPROVAL_CASE_REJECTED), eq("APPROVAL_CASE"), any(), eq(AuditResult.SUCCESS),
+                eq("Missing required evidence"));
+        verify(events).publishEvent(any(NotificationRequestedEvent.class));
     }
 
     @Test

@@ -3,11 +3,14 @@ package com.digitalbank.accountopening.bankaccount;
 import com.digitalbank.accountopening.application.*;
 import com.digitalbank.accountopening.application.enums.ApplicationStatus;
 import com.digitalbank.accountopening.application.workflow.ApplicationWorkflowService;
+import com.digitalbank.accountopening.audit.*;
+import com.digitalbank.accountopening.notification.*;
 import com.digitalbank.accountopening.bankaccount.dto.AccountProvisioningResponse;
 import com.digitalbank.accountopening.common.exception.*;
 import com.digitalbank.accountopening.integration.corebanking.*;
 import com.digitalbank.accountopening.integration.tracking.*;
 import org.springframework.stereotype.Service;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.transaction.annotation.Transactional;
 import java.time.*;
 import java.util.*;
@@ -20,10 +23,14 @@ public class AccountProvisioningStateService {
     private final IntegrationRequestRepository integrations;
     private final ApplicationWorkflowService workflow;
     private final Clock clock;
+    private final AuditLogService auditLogService;
+    private final ApplicationEventPublisher events;
 
     public AccountProvisioningStateService(AccountApplicationRepository applications, BankAccountRepository accounts,
-            IntegrationRequestRepository integrations, ApplicationWorkflowService workflow, Clock clock) {
-        this.applications=applications; this.accounts=accounts; this.integrations=integrations; this.workflow=workflow; this.clock=clock;
+            IntegrationRequestRepository integrations, ApplicationWorkflowService workflow,
+            AuditLogService auditLogService, ApplicationEventPublisher events, Clock clock) {
+        this.applications=applications; this.accounts=accounts; this.integrations=integrations; this.workflow=workflow;
+        this.auditLogService=auditLogService; this.events=events; this.clock=clock;
     }
 
     @Transactional
@@ -43,6 +50,8 @@ public class AccountProvisioningStateService {
         integration.setStatus(IntegrationStatus.IN_PROGRESS); integration.setUpdatedAt(now); integrations.save(integration);
         workflow.transition(application, ApplicationStatus.ACCOUNT_CREATING, "SYSTEM", "Bank account creation started");
         applications.save(application);
+        auditLogService.record(application, AuditActorType.SYSTEM, "SYSTEM", AuditAction.ACCOUNT_CREATION_STARTED,
+                "INTEGRATION_REQUEST", integration.getId().toString(), AuditResult.PENDING, "Bank account creation started");
         return Preparation.pending(context(application, integration));
     }
 
@@ -55,6 +64,8 @@ public class AccountProvisioningStateService {
         OffsetDateTime now=OffsetDateTime.now(clock); integration.setStatus(IntegrationStatus.IN_PROGRESS); integration.setUpdatedAt(now);
         workflow.transition(application, ApplicationStatus.ACCOUNT_CREATING, "SYSTEM", "Manual account creation retry started");
         applications.save(application); integrations.save(integration);
+        auditLogService.record(application, AuditActorType.SYSTEM, "SYSTEM", AuditAction.ACCOUNT_CREATION_RETRY_STARTED,
+                "INTEGRATION_REQUEST", integration.getId().toString(), AuditResult.PENDING, "Manual account creation retry started");
         return context(application, integration);
     }
 
@@ -77,6 +88,8 @@ public class AccountProvisioningStateService {
         AccountApplication application=find(applicationId); IntegrationRequest request=integrations.findById(integrationId).orElseThrow();
         request.setStatus(IntegrationStatus.RETRY_PENDING); request.setUpdatedAt(OffsetDateTime.now(clock)); integrations.save(request);
         workflow.transition(application, ApplicationStatus.RETRY_PENDING, "SYSTEM", "Core Banking retry attempts exhausted"); applications.save(application);
+        auditLogService.record(application, AuditActorType.SYSTEM, "SYSTEM", AuditAction.ACCOUNT_CREATION_RETRY_PENDING,
+                "INTEGRATION_REQUEST", integrationId.toString(), AuditResult.PENDING, "Core Banking retry attempts exhausted");
     }
 
     @Transactional
@@ -88,6 +101,9 @@ public class AccountProvisioningStateService {
         request.setLastErrorMessage(limit(failure.getMessage())); request.setUpdatedAt(OffsetDateTime.now(clock)); integrations.save(request);
         workflow.transition(application, ApplicationStatus.FAILED, "SYSTEM", "Core Banking definitively rejected account creation");
         applications.save(application);
+        auditLogService.record(application, AuditActorType.SYSTEM, "SYSTEM", AuditAction.ACCOUNT_CREATION_FAILED,
+                "INTEGRATION_REQUEST", integrationId.toString(), AuditResult.FAILED,
+                "Core Banking definitively rejected account creation");
     }
 
     @Transactional
@@ -114,6 +130,11 @@ public class AccountProvisioningStateService {
         IntegrationRequest integration=integrations.findById(integrationId).orElseThrow(); integration.setStatus(IntegrationStatus.SUCCEEDED);
         integration.setExternalReference(external.accountNumber()); integration.setLastHttpStatus(null);
         integration.setLastErrorCode(null); integration.setLastErrorMessage(null); integration.setUpdatedAt(OffsetDateTime.now(clock)); integrations.save(integration);
+        auditLogService.record(application, AuditActorType.SYSTEM, "SYSTEM", AuditAction.ACCOUNT_CREATED,
+                "BANK_ACCOUNT", external.accountId().toString(), AuditResult.SUCCESS,
+                "Account " + external.accountNumber() + " created");
+        events.publishEvent(new NotificationRequestedEvent(applicationId, application.getCustomerId(),
+                NotificationType.ACCOUNT_OPENED, "Account opened", "Your account has been opened successfully."));
         return response(application, account);
     }
 
@@ -135,6 +156,8 @@ public class AccountProvisioningStateService {
         request.setLastErrorCode(errorCode); request.setLastErrorMessage(limit(errorMessage));
         request.setUpdatedAt(OffsetDateTime.now(clock)); integrations.save(request);
         workflow.transition(application, ApplicationStatus.RETRY_PENDING, "SYSTEM", transitionReason); applications.save(application);
+        auditLogService.record(application, AuditActorType.SYSTEM, "SYSTEM", AuditAction.ACCOUNT_CREATION_RETRY_PENDING,
+                "INTEGRATION_REQUEST", integrationId.toString(), AuditResult.PENDING, transitionReason);
     }
     private ProvisioningContext context(AccountApplication a, IntegrationRequest r) {
         return new ProvisioningContext(a.getApplicationId(),a.getCustomerId(),a.getProductCode(),r.getId(),r.getIdempotencyKey());

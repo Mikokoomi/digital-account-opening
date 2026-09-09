@@ -36,6 +36,9 @@ import com.digitalbank.accountopening.integration.cifkyc.ReviewReason;
 import com.digitalbank.accountopening.application.rule.ApplicationRuleEvaluationService;
 import com.digitalbank.accountopening.application.workflow.ApplicationWorkflowService;
 import com.digitalbank.accountopening.approval.ApprovalCaseService;
+import com.digitalbank.accountopening.audit.*;
+import com.digitalbank.accountopening.notification.*;
+import org.springframework.context.ApplicationEventPublisher;
 
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -60,6 +63,9 @@ import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.argThat;
+import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.spy;
@@ -89,6 +95,8 @@ class ApplicationServiceTest {
 
     @Mock
     private ApprovalCaseService approvalCaseService;
+    @Mock private AuditLogService auditLogService;
+    @Mock private ApplicationEventPublisher events;
 
     private ApplicationWorkflowService applicationWorkflowService;
 
@@ -106,6 +114,8 @@ class ApplicationServiceTest {
         applicationRuleEvaluationService,
         applicationWorkflowService,
         approvalCaseService,
+        auditLogService,
+        events,
         Clock.fixed(TEST_INSTANT, ZoneOffset.UTC)
 );
     }
@@ -141,6 +151,8 @@ class ApplicationServiceTest {
         assertEquals(savedApplication.getApplicationId(), result.applicationId());
         assertEquals("Current Account", result.productName());
         assertEquals(ApplicationStatus.DRAFT, result.status());
+        verify(auditLogService).record(eq(savedApplication), eq(AuditActorType.CUSTOMER), eq("CUSTOMER-001"),
+                eq(AuditAction.APPLICATION_CREATED), eq("APPLICATION"), any(), eq(AuditResult.SUCCESS), eq("Application created"));
     }
 
     @Test
@@ -315,6 +327,8 @@ class ApplicationServiceTest {
                 "CUSTOMER-001",
                 "Application submitted"
         );
+        verify(auditLogService).record(eq(application), eq(AuditActorType.CUSTOMER), eq("CUSTOMER-001"),
+                eq(AuditAction.APPLICATION_SUBMITTED), eq("APPLICATION"), any(), eq(AuditResult.SUCCESS), eq("Application submitted"));
     }
 
     @Test
@@ -376,6 +390,19 @@ class ApplicationServiceTest {
                         new CreateApplicationRequest("CUSTOMER-001", "CURRENT_ACCOUNT")
                 )
         );
+    }
+
+    @Test
+    void createApplication_shouldPropagateAuditPersistenceFailure() {
+        AccountApplication savedApplication = application(UUID.randomUUID(), "CUSTOMER-001", "CURRENT_ACCOUNT");
+        when(productRepository.findByProductCode("CURRENT_ACCOUNT")).thenReturn(Optional.of(activeProduct()));
+        when(applicationRepository.save(any(AccountApplication.class))).thenReturn(savedApplication);
+        doThrow(new IllegalStateException("Audit persistence failed")).when(auditLogService).record(
+                any(AccountApplication.class), any(AuditActorType.class), anyString(), any(AuditAction.class),
+                anyString(), anyString(), any(AuditResult.class), anyString());
+
+        assertThrows(IllegalStateException.class, () -> applicationService.createApplication(
+                new CreateApplicationRequest("CUSTOMER-001", "CURRENT_ACCOUNT")));
     }
 
     @Test
@@ -551,6 +578,8 @@ class ApplicationServiceTest {
         verify(cifKycVerificationService).verify("CUS001");
         verify(applicationRepository).save(application);
         verify(historyRepository, never()).save(any());
+        verify(auditLogService).record(eq(application), eq(AuditActorType.SYSTEM), eq("SYSTEM"),
+                eq(AuditAction.KYC_CHECK_SUCCEEDED), eq("APPLICATION"), any(), eq(AuditResult.SUCCESS), any());
     }
 
     @Test
@@ -609,6 +638,8 @@ class ApplicationServiceTest {
         assertNull(application.getKycExpiryDate());
         verify(applicationRepository, never()).save(any());
         verify(historyRepository, never()).save(any());
+        verify(auditLogService).recordFailure(eq(applicationId), eq(AuditActorType.SYSTEM), eq("SYSTEM"),
+                eq(AuditAction.KYC_CHECK_FAILED), any());
     }
 
     private void assertVerificationFailure(CifKycVerificationErrorCode errorCode) {
@@ -631,6 +662,8 @@ class ApplicationServiceTest {
         assertNull(application.getKycExpiryDate());
         verify(applicationRepository, never()).save(any());
         verify(historyRepository, never()).save(any());
+        verify(auditLogService).recordFailure(eq(applicationId), eq(AuditActorType.SYSTEM), eq("SYSTEM"),
+                eq(AuditAction.KYC_CHECK_FAILED), any());
     }
 
     @Test
@@ -1012,6 +1045,9 @@ class ApplicationServiceTest {
         verify(applicationRuleEvaluationService).evaluate(application);
         verifyNoInteractions(approvalCaseService);
         verify(applicationRepository, never()).save(any());
+        verify(auditLogService).record(eq(application), eq(AuditActorType.SYSTEM), eq("SYSTEM"),
+                eq(AuditAction.APPLICATION_PROCESSED), eq("APPLICATION"), any(), eq(AuditResult.SUCCESS), any());
+        verify(events).publishEvent(any(NotificationRequestedEvent.class));
     }
 
     @Test
