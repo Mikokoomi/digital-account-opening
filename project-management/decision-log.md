@@ -41,3 +41,7 @@ Phase A commit `ACCOUNT_CREATING`, phase B gọi Core Banking không có transac
 Account creation dùng stable key `CREATE_ACCOUNT:<applicationId>`. Một `IntegrationRequest` đại diện logical operation, không phải từng attempt; mọi automatic/manual attempt reuse record và key đó. Core Banking replay cùng key/payload trả existing account.
 
 Chỉ network/I/O, HTTP 429 và 5xx được retry. Business conflict và data-contract error không retry. Hết bounded retry chuyển `RETRY_PENDING`, không dùng `FAILED` vì external result có thể chưa xác định. Manual retry reuse cùng tracking record/key. HTTP và backoff không nằm trong DB transaction. Scheduled retry và generalized reconciliation chưa thuộc current scope.
+
+## DEC-010 - Trạng thái failure của Core Banking phải phản ánh độ chắc chắn
+
+HTTP 4xx từ Core Banking là definitive rejection nên cả application và integration request chuyển `FAILED`. Response success malformed/incomplete là ambiguous vì external account có thể đã được tạo; trường hợp này chuyển cả hai sang `RETRY_PENDING` để manual recovery với cùng idempotency key. Retry exhaustion và interrupted backoff cũng dùng `RETRY_PENDING`; khi interrupt, thread interrupt flag phải được khôi phục trước khi trả lỗi.

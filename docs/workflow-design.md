@@ -55,10 +55,11 @@ stateDiagram-v2
     APPROVED --> ACCOUNT_CREATING: create-account phase A
     ACCOUNT_CREATING --> COMPLETED: account saved phase C
     ACCOUNT_CREATING --> RETRY_PENDING: retry exhausted
+    ACCOUNT_CREATING --> FAILED: definitive Core Banking rejection
     RETRY_PENDING --> ACCOUNT_CREATING: manual retry, same key
 ```
 
-`ApplicationWorkflowService` enforces `APPROVED → ACCOUNT_CREATING → COMPLETED` và recovery path `ACCOUNT_CREATING → RETRY_PENDING → ACCOUNT_CREATING`. `COMPLETED` is terminal.
+`ApplicationWorkflowService` enforces `APPROVED → ACCOUNT_CREATING → COMPLETED`, definitive failure path `ACCOUNT_CREATING → FAILED`, và recovery path `ACCOUNT_CREATING → RETRY_PENDING → ACCOUNT_CREATING`. `COMPLETED` và `FAILED` là terminal.
 
 ## 4. Allowed State Transitions
 
@@ -85,7 +86,7 @@ IMPLEMENTED:
 
 Staff approval is IMPLEMENTED: routing to `UNDER_REVIEW` creates one `PENDING` case; assignment moves it to `ASSIGNED`; only assigned staff may approve/reject. Approve reevaluates mandatory rules, nhưng không yêu cầu `reviewRequired=false` vì review signal là lý do case tồn tại. Case và application transition hoàn tất trong một transaction.
 
-Account provisioning is a separate operation. Phase A commits state/tracking, phase B calls Core Banking and sleeps outside database transactions, and phase C records each attempt/result in its own transaction. All automatic and manual attempts reuse `CREATE_ACCOUNT:<applicationId>`. Exhaustion moves application/integration to `RETRY_PENDING`; success stores one local reference and moves to `COMPLETED`.
+Account provisioning là operation riêng. Phase A commit state/tracking, phase B gọi Core Banking và backoff ngoài database transaction, phase C lưu từng attempt/result trong transaction riêng. Mọi automatic/manual attempt reuse `CREATE_ACCOUNT:<applicationId>`. Retry exhaustion, ambiguous response và interrupted backoff chuyển cả application/integration sang `RETRY_PENDING`; definitive 4xx rejection chuyển cả hai sang `FAILED`; success lưu một local reference và chuyển sang `COMPLETED`.
 
 ## 7. Exception Overview, Audit and Status History
 

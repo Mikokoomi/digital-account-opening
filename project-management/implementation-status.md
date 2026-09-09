@@ -16,6 +16,7 @@
 - Core Banking HTTP integration và account provisioning `APPROVED → ACCOUNT_CREATING → COMPLETED`.
 - Stable Core Banking idempotency key, replay-safe create, bounded retry cho technical failures và lost-response recovery.
 - `IntegrationRequest` tracking qua Flyway V9, cumulative attempts, `RETRY_PENDING`, manual retry API và read-only tracking API.
+- Reliability failure-state hardening: definitive rejection → `FAILED`; ambiguous response, retry exhaustion hoặc interrupted backoff → `RETRY_PENDING`; application và integration request luôn đồng bộ.
 - Local `bank_accounts` projection qua Flyway V8; Core Banking Mock sở hữu account domain.
 - PostgreSQL/Flyway V1–V9, health, actuator, Swagger/OpenAPI, structured error response.
 

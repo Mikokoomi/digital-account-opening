@@ -20,7 +20,7 @@ public class CoreBankingClient {
         } catch (RestClientResponseException exception) {
             int status=exception.getStatusCode().value();
             if (status == 429 || status >= 500) throw new CoreBankingRetryableException("Core Banking returned HTTP " + status, status, exception);
-            throw new CoreBankingNonRetryableException("Core Banking rejected the request with HTTP " + status, status, exception);
+            throw new CoreBankingDefinitiveFailureException("Core Banking rejected the request with HTTP " + status, status, exception);
         } catch (RestClientException exception) {
             throw new CoreBankingRetryableException("Core Banking service is unavailable", null, exception);
         }
@@ -30,7 +30,7 @@ public class CoreBankingClient {
                 || response.accountNumber().isBlank() || response.applicationId() == null
                 || !response.applicationId().equals(request.applicationId())
                 || response.status() == null || response.status().isBlank() || response.openedAt() == null) {
-            throw new CoreBankingNonRetryableException("Core Banking returned an invalid response", null);
+            throw new CoreBankingAmbiguousResponseException("Core Banking returned an invalid response");
         }
     }
 }

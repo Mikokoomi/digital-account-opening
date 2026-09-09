@@ -6,6 +6,7 @@ import com.digitalbank.accountopening.integration.cifkyc.CifKycVerificationError
 import com.digitalbank.accountopening.integration.cifkyc.CifKycVerificationException;
 import com.digitalbank.accountopening.integration.corebanking.CoreBankingClientException;
 import com.digitalbank.accountopening.integration.corebanking.CoreBankingDuplicateApplicationException;
+import com.digitalbank.accountopening.integration.corebanking.CoreBankingDefinitiveFailureException;
 import com.digitalbank.accountopening.integration.corebanking.CoreBankingIdempotencyConflictException;
 import com.digitalbank.accountopening.integration.corebanking.CoreBankingNonRetryableException;
 import com.digitalbank.accountopening.integration.corebanking.CoreBankingRetryableException;
@@ -44,6 +45,10 @@ public class GlobalExceptionHandler {
     @ExceptionHandler(CoreBankingIdempotencyConflictException.class)
     public ResponseEntity<ErrorResponse> handleCoreBankingIdempotencyConflict(CoreBankingIdempotencyConflictException exception) {
         return error(HttpStatus.CONFLICT, exception.getMessage(), "CORE_BANKING_IDEMPOTENCY_CONFLICT");
+    }
+    @ExceptionHandler(CoreBankingDefinitiveFailureException.class)
+    public ResponseEntity<ErrorResponse> handleCoreBankingDefinitiveFailure(CoreBankingDefinitiveFailureException exception) {
+        return error(HttpStatus.CONFLICT, exception.getMessage(), "CORE_BANKING_REQUEST_REJECTED");
     }
     @ExceptionHandler(CoreBankingNonRetryableException.class)
     public ResponseEntity<ErrorResponse> handleCoreBankingNonRetryable(CoreBankingNonRetryableException exception) {

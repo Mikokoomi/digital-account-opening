@@ -10,12 +10,14 @@ import java.util.UUID;
 public class ApplicationAccountProvisioningService {
     private final AccountProvisioningStateService stateService;
     private final CoreBankingClient coreBankingClient;
+    private final RetrySleeper retrySleeper;
     private final int maxAttempts;
     private final long backoffMs;
     public ApplicationAccountProvisioningService(AccountProvisioningStateService stateService, CoreBankingClient coreBankingClient,
+            RetrySleeper retrySleeper,
             @Value("${integration.core-banking.retry.max-attempts:3}") int maxAttempts,
             @Value("${integration.core-banking.retry.backoff-ms:200}") long backoffMs) {
-        this.stateService=stateService; this.coreBankingClient=coreBankingClient;
+        this.stateService=stateService; this.coreBankingClient=coreBankingClient; this.retrySleeper=retrySleeper;
         if(maxAttempts<1) throw new IllegalArgumentException("maxAttempts must be positive");
         this.maxAttempts=maxAttempts; this.backoffMs=Math.max(0,backoffMs);
     }
@@ -34,15 +36,24 @@ public class ApplicationAccountProvisioningService {
                 return stateService.complete(context.applicationId(),context.integrationId(),result);
             } catch(CoreBankingRetryableException failure) {
                 last=failure; stateService.recordRetryableFailure(context.integrationId(),failure);
-                if(attempt<maxAttempts) backoff();
+                if(attempt<maxAttempts) backoff(context);
+            } catch(CoreBankingAmbiguousResponseException failure) {
+                stateService.markAmbiguousResult(context.applicationId(),context.integrationId(),failure); throw failure;
+            } catch(CoreBankingDefinitiveFailureException failure) {
+                stateService.failDefinitively(context.applicationId(),context.integrationId(),failure); throw failure;
             } catch(CoreBankingNonRetryableException failure) {
-                stateService.fail(context.integrationId(),failure); throw failure;
+                stateService.markAmbiguousResult(context.applicationId(),context.integrationId(),failure); throw failure;
             }
         }
         stateService.exhaust(context.applicationId(),context.integrationId()); throw last;
     }
-    private void backoff() {
-        try { Thread.sleep(backoffMs); }
-        catch(InterruptedException exception) { Thread.currentThread().interrupt(); throw new CoreBankingRetryableException("Retry interrupted",null,exception); }
+    private void backoff(AccountProvisioningStateService.ProvisioningContext context) {
+        try { retrySleeper.sleep(backoffMs); }
+        catch(InterruptedException exception) {
+            Thread.currentThread().interrupt();
+            CoreBankingRetryableException failure=new CoreBankingRetryableException("Core Banking retry interrupted",null,exception);
+            stateService.markRetryInterrupted(context.applicationId(),context.integrationId(),failure);
+            throw failure;
+        }
     }
 }

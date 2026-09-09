@@ -80,11 +80,26 @@ public class AccountProvisioningStateService {
     }
 
     @Transactional
-    public void fail(UUID integrationId, CoreBankingNonRetryableException failure) {
-        IntegrationRequest request=integrations.findById(integrationId).orElseThrow(); request.setStatus(IntegrationStatus.FAILED);
-        request.setLastHttpStatus(failure.getHttpStatus()); request.setLastErrorCode(failure instanceof CoreBankingIdempotencyConflictException
-                ? "CORE_BANKING_IDEMPOTENCY_CONFLICT" : "CORE_BANKING_RESPONSE_INVALID");
+    public void failDefinitively(UUID applicationId, UUID integrationId, CoreBankingDefinitiveFailureException failure) {
+        AccountApplication application=find(applicationId); IntegrationRequest request=integrations.findById(integrationId).orElseThrow();
+        request.setStatus(IntegrationStatus.FAILED); request.setLastHttpStatus(failure.getHttpStatus());
+        request.setLastErrorCode(failure instanceof CoreBankingIdempotencyConflictException
+                ? "CORE_BANKING_IDEMPOTENCY_CONFLICT" : "CORE_BANKING_REQUEST_REJECTED");
         request.setLastErrorMessage(limit(failure.getMessage())); request.setUpdatedAt(OffsetDateTime.now(clock)); integrations.save(request);
+        workflow.transition(application, ApplicationStatus.FAILED, "SYSTEM", "Core Banking definitively rejected account creation");
+        applications.save(application);
+    }
+
+    @Transactional
+    public void markAmbiguousResult(UUID applicationId, UUID integrationId, CoreBankingNonRetryableException failure) {
+        moveToRetryPending(applicationId, integrationId, failure.getHttpStatus(), "CORE_BANKING_RESPONSE_INVALID",
+                failure.getMessage(), "Core Banking result could not be confirmed");
+    }
+
+    @Transactional
+    public void markRetryInterrupted(UUID applicationId, UUID integrationId, CoreBankingRetryableException failure) {
+        moveToRetryPending(applicationId, integrationId, failure.getHttpStatus(), "CORE_BANKING_RETRY_INTERRUPTED",
+                failure.getMessage(), "Core Banking retry was interrupted");
     }
 
     @Transactional
@@ -112,6 +127,14 @@ public class AccountProvisioningStateService {
         IntegrationRequest r=new IntegrationRequest(); r.setApplication(application); r.setIntegrationType(TYPE);
         r.setIdempotencyKey("CREATE_ACCOUNT:"+application.getApplicationId()); r.setStatus(IntegrationStatus.IN_PROGRESS);
         r.setAttemptCount(0); r.setCreatedAt(now); r.setUpdatedAt(now); return r;
+    }
+    private void moveToRetryPending(UUID applicationId, UUID integrationId, Integer httpStatus, String errorCode,
+            String errorMessage, String transitionReason) {
+        AccountApplication application=find(applicationId); IntegrationRequest request=integrations.findById(integrationId).orElseThrow();
+        request.setStatus(IntegrationStatus.RETRY_PENDING); request.setLastHttpStatus(httpStatus);
+        request.setLastErrorCode(errorCode); request.setLastErrorMessage(limit(errorMessage));
+        request.setUpdatedAt(OffsetDateTime.now(clock)); integrations.save(request);
+        workflow.transition(application, ApplicationStatus.RETRY_PENDING, "SYSTEM", transitionReason); applications.save(application);
     }
     private ProvisioningContext context(AccountApplication a, IntegrationRequest r) {
         return new ProvisioningContext(a.getApplicationId(),a.getCustomerId(),a.getProductCode(),r.getId(),r.getIdempotencyKey());

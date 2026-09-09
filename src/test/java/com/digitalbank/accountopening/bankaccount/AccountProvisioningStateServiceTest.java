@@ -57,6 +57,28 @@ class AccountProvisioningStateServiceTest {
         when(applications.findById(a.getApplicationId())).thenReturn(Optional.of(a)); when(integrations.findById(r.getId())).thenReturn(Optional.of(r));
         service.exhaust(a.getApplicationId(),r.getId()); assertEquals(ApplicationStatus.RETRY_PENDING,a.getStatus()); assertEquals(IntegrationStatus.RETRY_PENDING,r.getStatus());
     }
+    @Test void definitiveFailureMovesApplicationAndOperationToFailed(){
+        AccountApplication a=application(ApplicationStatus.ACCOUNT_CREATING); IntegrationRequest r=integration(a,IntegrationStatus.IN_PROGRESS);
+        when(applications.findById(a.getApplicationId())).thenReturn(Optional.of(a)); when(integrations.findById(r.getId())).thenReturn(Optional.of(r));
+        service.failDefinitively(a.getApplicationId(),r.getId(),new CoreBankingDefinitiveFailureException("rejected",400,null));
+        assertEquals(ApplicationStatus.FAILED,a.getStatus()); assertEquals(IntegrationStatus.FAILED,r.getStatus());
+        assertEquals("CORE_BANKING_REQUEST_REJECTED",r.getLastErrorCode());
+        verify(history).save(argThat(h->h.getFromStatus()==ApplicationStatus.ACCOUNT_CREATING&&h.getToStatus()==ApplicationStatus.FAILED));
+    }
+    @Test void ambiguousResponseMovesApplicationAndOperationToRetryPending(){
+        AccountApplication a=application(ApplicationStatus.ACCOUNT_CREATING); IntegrationRequest r=integration(a,IntegrationStatus.IN_PROGRESS);
+        when(applications.findById(a.getApplicationId())).thenReturn(Optional.of(a)); when(integrations.findById(r.getId())).thenReturn(Optional.of(r));
+        service.markAmbiguousResult(a.getApplicationId(),r.getId(),new CoreBankingAmbiguousResponseException("invalid response"));
+        assertEquals(ApplicationStatus.RETRY_PENDING,a.getStatus()); assertEquals(IntegrationStatus.RETRY_PENDING,r.getStatus());
+        assertEquals("CORE_BANKING_RESPONSE_INVALID",r.getLastErrorCode());
+    }
+    @Test void interruptedRetryMovesApplicationAndOperationToRetryPending(){
+        AccountApplication a=application(ApplicationStatus.ACCOUNT_CREATING); IntegrationRequest r=integration(a,IntegrationStatus.IN_PROGRESS);
+        when(applications.findById(a.getApplicationId())).thenReturn(Optional.of(a)); when(integrations.findById(r.getId())).thenReturn(Optional.of(r));
+        service.markRetryInterrupted(a.getApplicationId(),r.getId(),new CoreBankingRetryableException("interrupted",null,null));
+        assertEquals(ApplicationStatus.RETRY_PENDING,a.getStatus()); assertEquals(IntegrationStatus.RETRY_PENDING,r.getStatus());
+        assertEquals("CORE_BANKING_RETRY_INTERRUPTED",r.getLastErrorCode());
+    }
     @Test void completeStoresOneReferenceAndMarksSucceeded(){
         AccountApplication a=application(ApplicationStatus.ACCOUNT_CREATING); IntegrationRequest r=integration(a,IntegrationStatus.IN_PROGRESS);
         when(applications.findById(a.getApplicationId())).thenReturn(Optional.of(a)); when(integrations.findById(r.getId())).thenReturn(Optional.of(r));

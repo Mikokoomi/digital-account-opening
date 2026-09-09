@@ -78,7 +78,8 @@ Mandatory conditions
 - Flow thành công: `APPROVED → ACCOUNT_CREATING → COMPLETED`.
 - Mỗi logical operation dùng stable key `CREATE_ACCOUNT:<applicationId>` và được theo dõi bằng một `IntegrationRequest`.
 - Lỗi network/HTTP 429/5xx được retry đồng bộ có giới hạn (mặc định 3 lần) mà không giữ database transaction khi HTTP/backoff.
-- Hết lượt retry chuyển `ACCOUNT_CREATING → RETRY_PENDING`; endpoint manual retry reuse cùng tracking record và idempotency key.
+- Hết lượt retry, response thành công không hợp lệ/không xác định, hoặc backoff bị interrupt đều chuyển cả application và integration request sang `RETRY_PENDING`; endpoint manual retry reuse cùng tracking record và idempotency key.
+- Lỗi Core Banking từ chối dứt khoát (HTTP 4xx không retry, gồm idempotency conflict) chuyển cả hai sang `FAILED`; không để application mắc kẹt ở `ACCOUNT_CREATING`.
 - Core Banking trả lại cùng account cho replay cùng key/payload; gọi lại create-account sau `COMPLETED` trả local result và không gọi upstream.
 
 ## Luồng nghiệp vụ
@@ -160,7 +161,7 @@ SUBMITTED        reviewRequired?
 - `CANCELLED`: application bị hủy.
 - `FAILED`: trạng thái lỗi đã được định nghĩa trong enum.
 
-Các transition đang được sử dụng gồm `DRAFT → SUBMITTED`, `DRAFT/SUBMITTED → CANCELLED`, `SUBMITTED → APPROVED/UNDER_REVIEW`, `UNDER_REVIEW → APPROVED/REJECTED`, `APPROVED → ACCOUNT_CREATING`, `ACCOUNT_CREATING → COMPLETED/RETRY_PENDING` và `RETRY_PENDING → ACCOUNT_CREATING`.
+Các transition đang được sử dụng gồm `DRAFT → SUBMITTED`, `DRAFT/SUBMITTED → CANCELLED`, `SUBMITTED → APPROVED/UNDER_REVIEW`, `UNDER_REVIEW → APPROVED/REJECTED`, `APPROVED → ACCOUNT_CREATING`, `ACCOUNT_CREATING → COMPLETED/RETRY_PENDING/FAILED` và `RETRY_PENDING → ACCOUNT_CREATING`.
 
 ## Database
 

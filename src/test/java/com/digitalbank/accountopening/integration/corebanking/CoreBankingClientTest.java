@@ -16,9 +16,9 @@ class CoreBankingClientTest {
     @BeforeEach void setup(){ RestClient.Builder b=RestClient.builder().baseUrl("http://core.test"); server=MockRestServiceServer.bindTo(b).build(); client=new CoreBankingClient(b.build()); id=UUID.randomUUID(); }
     @AfterEach void verify(){server.verify();}
     @Test void createsAccountWithIdempotencyKey(){ expect(withSuccess(json(id),MediaType.APPLICATION_JSON)); assertEquals("ACC-1",client.createAccount("KEY-1",request()).accountNumber()); }
-    @Test void invalidResponseIsNonRetryable(){ expect(withSuccess("{}",MediaType.APPLICATION_JSON)); assertThrows(CoreBankingNonRetryableException.class,()->client.createAccount("KEY-1",request())); }
+    @Test void invalidResponseIsAmbiguous(){ expect(withSuccess("{}",MediaType.APPLICATION_JSON)); assertThrows(CoreBankingAmbiguousResponseException.class,()->client.createAccount("KEY-1",request())); }
     @Test void serverErrorIsRetryable(){ expect(withStatus(HttpStatus.INTERNAL_SERVER_ERROR)); assertThrows(CoreBankingRetryableException.class,()->client.createAccount("KEY-1",request())); }
-    @Test void badRequestIsNonRetryable(){ expect(withStatus(HttpStatus.BAD_REQUEST)); assertThrows(CoreBankingNonRetryableException.class,()->client.createAccount("KEY-1",request())); }
+    @Test void badRequestIsDefinitive(){ expect(withStatus(HttpStatus.BAD_REQUEST)); assertThrows(CoreBankingDefinitiveFailureException.class,()->client.createAccount("KEY-1",request())); }
     @Test void conflictIsIdempotencyConflict(){ expect(withStatus(HttpStatus.CONFLICT)); assertThrows(CoreBankingIdempotencyConflictException.class,()->client.createAccount("KEY-1",request())); }
     private void expect(org.springframework.test.web.client.ResponseCreator response){ server.expect(once(),requestTo("http://core.test/api/accounts")).andExpect(method(HttpMethod.POST)).andExpect(header("Idempotency-Key","KEY-1")).andRespond(response); }
     private CoreBankingCreateAccountRequest request(){return new CoreBankingCreateAccountRequest(id,"CUS001","P");}

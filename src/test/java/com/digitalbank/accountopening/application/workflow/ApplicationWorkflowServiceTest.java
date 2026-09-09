@@ -38,6 +38,7 @@ class ApplicationWorkflowServiceTest {
                 new TransitionCase(ApplicationStatus.APPROVED, ApplicationStatus.ACCOUNT_CREATING),
                 new TransitionCase(ApplicationStatus.ACCOUNT_CREATING, ApplicationStatus.COMPLETED),
                 new TransitionCase(ApplicationStatus.ACCOUNT_CREATING, ApplicationStatus.RETRY_PENDING),
+                new TransitionCase(ApplicationStatus.ACCOUNT_CREATING, ApplicationStatus.FAILED),
                 new TransitionCase(ApplicationStatus.RETRY_PENDING, ApplicationStatus.ACCOUNT_CREATING)
         );
 

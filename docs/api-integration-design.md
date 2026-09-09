@@ -52,7 +52,7 @@ Contract bổ sung:
 
 IMPLEMENTED: main calls `POST http://localhost:8082/api/accounts` with `Idempotency-Key: CREATE_ACCOUNT:<applicationId>`. First create (201) và idempotent replay (200) đều là success. Core Banking binds one key/application/payload to one account; same-key replay returns the existing result, including legacy row recovery.
 
-Main retries only connection/I/O, HTTP 429 và 5xx, with configurable bounded attempts/backoff. HTTP/backoff runs outside DB transactions. HTTP 400, 409 idempotency conflict and invalid response are non-retryable. Exhaustion returns 503 and commits application/integration as `RETRY_PENDING`; manual retry reuses the same record/key. A completed create command is idempotent locally and does not call Core Banking again.
+Main chỉ automatic retry connection/I/O, HTTP 429 và 5xx, với bounded attempts/backoff có cấu hình. HTTP/backoff chạy ngoài DB transaction. HTTP 4xx (gồm 409 idempotency conflict) là definitive failure: application và integration request cùng chuyển `FAILED`. Response 2xx malformed/incomplete là ambiguous result nên không tự retry nhưng chuyển cả hai sang `RETRY_PENDING` để manual recovery bằng cùng record/key. Retry exhaustion hoặc interrupted backoff cũng lưu `RETRY_PENDING`; interrupt flag được restore. Create command đã hoàn tất là idempotent tại local và không gọi Core Banking lại.
 
 ## 6. Error Catalog
 
@@ -68,6 +68,8 @@ Main retries only connection/I/O, HTTP 429 và 5xx, with configurable bounded at
 | 503 | `CIF_KYC_SERVICE_UNAVAILABLE` | Technical integration/data-contract failure. |
 | 409 | `ACCOUNT_CREATION_NOT_ALLOWED`, `BANK_ACCOUNT_ALREADY_EXISTS` | Provisioning state/duplicate conflict. |
 | 503 | `CORE_BANKING_SERVICE_UNAVAILABLE` | Core Banking technical/data-contract failure. |
+| 503 | `CORE_BANKING_RESPONSE_INVALID` | Core Banking trả success response không đủ dữ liệu để xác nhận kết quả; application có thể manual retry. |
+| 409 | `CORE_BANKING_REQUEST_REJECTED` | Core Banking từ chối request dứt khoát; application và tracking chuyển FAILED. |
 | 409 | `ACCOUNT_CREATION_IN_PROGRESS`, `ACCOUNT_CREATION_RETRY_NOT_ALLOWED` | Concurrent command hoặc invalid retry state. |
 | 409 | `CORE_BANKING_IDEMPOTENCY_CONFLICT` | Key/application/payload conflict; không retry. |
 | 503 | `CORE_BANKING_RESPONSE_INVALID` | Non-retryable upstream request/data-contract failure. |
