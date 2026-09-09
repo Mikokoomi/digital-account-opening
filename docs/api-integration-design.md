@@ -72,4 +72,3 @@ Main chỉ automatic retry connection/I/O, HTTP 429 và 5xx, với bounded attem
 | 409 | `CORE_BANKING_REQUEST_REJECTED` | Core Banking từ chối request dứt khoát; application và tracking chuyển FAILED. |
 | 409 | `ACCOUNT_CREATION_IN_PROGRESS`, `ACCOUNT_CREATION_RETRY_NOT_ALLOWED` | Concurrent command hoặc invalid retry state. |
 | 409 | `CORE_BANKING_IDEMPOTENCY_CONFLICT` | Key/application/payload conflict; không retry. |
-| 503 | `CORE_BANKING_RESPONSE_INVALID` | Non-retryable upstream request/data-contract failure. |
