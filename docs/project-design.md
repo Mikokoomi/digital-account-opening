@@ -26,12 +26,12 @@ Customer onboarding/tạo CIF, authentication banking production, KYC OCR/biomet
 
 ## 5. Business Assumptions
 
-- Customer master thuộc CIF/KYC; database chính chỉ giữ `customerId`.
+- Customer master thuộc CIF/KYC; database chính chỉ giữ application cùng snapshot hẹp của lần verification (`customerId`, full name, date of birth, customer/KYC status và review signal), không quản lý customer master lifecycle.
 - Mỗi application có UUID `applicationId` và một requested product.
 - Chỉ DRAFT update/submit; DRAFT hoặc SUBMITTED cancel.
 - KYC check và rule evaluation chỉ ở SUBMITTED.
-- KYC success lưu snapshot gồm KYC và tín hiệu manual review, không đổi status/history; rule evaluation read-only.
-- Product/KYC là mandatory conditions, staff không được override.
+- KYC success lưu customer/KYC/manual-review snapshot, không đổi status/history; rule evaluation read-only và không gọi upstream lại.
+- Required customer data, customer ACTIVE, product ACTIVE và KYC current là mandatory conditions; staff không được override.
 - Manual review không phát sinh từ mandatory failure; nó chỉ phát sinh khi upstream trả `reviewRequired=true` kèm `reviewReason` hợp lệ.
 - `reviewRequired=false` yêu cầu `reviewReason=null`; `reviewRequired=true` yêu cầu reason khác null.
 - Approval và account creation là hai bước riêng. Chỉ application `APPROVED` được provision account.
@@ -40,4 +40,4 @@ Customer onboarding/tạo CIF, authentication banking production, KYC OCR/biomet
 
 ## 6. Technical Assumptions và Boundaries
 
-KYC snapshot current cần `VERIFIED`, verification timestamp, expiry không trước hôm nay và manual-review snapshot hợp lệ. Core Banking Mock sở hữu account domain; main chỉ lưu local reference. Một account-creation operation dùng stable idempotency key và một `IntegrationRequest` qua mọi attempt. External HTTP/backoff nằm ngoài DB transaction. Chỉ lỗi network, 429 và 5xx được retry; hết lượt chuyển `RETRY_PENDING`. Notification dùng local AFTER_COMMIT event và transaction riêng; không có broker, scheduler hay provider thật.
+KYC snapshot current cần customer profile snapshot hiện diện, customer `ACTIVE`, KYC `VERIFIED`, verification timestamp, expiry không trước hôm nay và manual-review snapshot hợp lệ. Core Banking Mock sở hữu account domain; main chỉ lưu local reference. Một account-creation operation dùng stable idempotency key và một `IntegrationRequest` qua mọi attempt. External HTTP/backoff nằm ngoài DB transaction. Chỉ lỗi network, 429 và 5xx được retry; hết lượt chuyển `RETRY_PENDING`. Notification dùng local AFTER_COMMIT event và transaction riêng; không có broker, scheduler hay provider thật.

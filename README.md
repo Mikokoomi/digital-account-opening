@@ -33,11 +33,13 @@ Backend project mô phỏng quy trình khách hàng hiện hữu đăng ký mở
 
 - Gọi CIF/KYC Mock Service qua HTTP.
 - Chỉ xác minh thành công khi customer tồn tại, `ACTIVE`, KYC `VERIFIED` và KYC chưa hết hạn.
-- Lưu KYC snapshot gồm `kycStatus`, `cifVerifiedAt`, `kycExpiryDate`, `reviewRequired` và `reviewReason`.
+- Lưu verification snapshot gồm `customerStatus`, `customerFullName`, `customerDateOfBirth`, `kycStatus`, `cifVerifiedAt`, `kycExpiryDate`, `reviewRequired` và `reviewReason`.
 - Phân biệt business failure của customer với technical hoặc upstream data-contract failure.
 
 ### Business Rules
 
+- `REQUIRED_CUSTOMER_DATA`
+- `CUSTOMER_ACTIVE`
 - `PRODUCT_ACTIVE`
 - `KYC_VERIFIED`
 
@@ -178,7 +180,7 @@ Các transition đang được sử dụng gồm `DRAFT → SUBMITTED`, `DRAFT/S
 | Bảng | Trách nhiệm |
 |---|---|
 | `products` | Lưu sản phẩm tài khoản. |
-| `account_applications` | Lưu application, KYC snapshot và manual-review snapshot. |
+| `account_applications` | Lưu application cùng customer/KYC/manual-review verification snapshot. |
 | `application_status_history` | Lưu lịch sử chuyển trạng thái của application. |
 | `approval_cases` | Lưu manual-review case, assignment và quyết định của staff. |
 | `bank_accounts` | Local reference tới account do Core Banking sở hữu. |
@@ -199,7 +201,7 @@ CHECK constraint của V7 bảo đảm:
 - `review_required = false` yêu cầu `review_reason` null.
 - `review_required = null` yêu cầu `review_reason` null, để tương thích record cũ chưa có snapshot.
 
-Project không có bảng `customers`; customer master data thuộc CIF/KYC Mock Service và application chỉ lưu `customerId` để tham chiếu.
+Project không có bảng `customers`; customer master data vẫn thuộc CIF/KYC Mock Service. Application chỉ lưu snapshot hẹp cần cho quyết định hiện tại (`customerId`, full name, date of birth và customer status), không trở thành customer master.
 
 ## Flyway Migrations
 
@@ -215,6 +217,7 @@ Project không có bảng `customers`; customer master data thuộc CIF/KYC Mock
 - V10: audit logs.
 - V11: notifications.
 - V12: notification uniqueness theo `(application_id, type)`.
+- V13: customer verification snapshot phục vụ mandatory rules.
 
 ## CIF/KYC Mock Service
 

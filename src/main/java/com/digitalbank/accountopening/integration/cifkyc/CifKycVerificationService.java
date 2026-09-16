@@ -46,6 +46,8 @@ public class CifKycVerificationService {
 
         return new CifKycVerificationResult(
                 customer.customerId(),
+                customer.fullName(),
+                customer.dateOfBirth(),
                 true,
                 customer.customerStatus(),
                 customer.kycStatus(),

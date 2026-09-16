@@ -45,6 +45,8 @@ class CifKycVerificationServiceTest {
         CifKycVerificationResult result = verificationService.verify("CUS001");
 
         assertEquals("CUS001", result.customerId());
+        assertEquals("Nguyen Van A", result.fullName());
+        assertEquals(LocalDate.of(1998, 5, 15), result.dateOfBirth());
         assertTrue(result.eligible());
         assertEquals("ACTIVE", result.customerStatus());
         assertEquals("VERIFIED", result.kycStatus());

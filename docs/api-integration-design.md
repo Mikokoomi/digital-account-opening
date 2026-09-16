@@ -40,7 +40,7 @@ Approval lifecycle is `PENDING → ASSIGNED → APPROVED/REJECTED`. Terminal dec
 
 ## 4. CIF/KYC Mock Integration
 
-IMPLEMENTED: call `GET /api/customers/{customerId}`. Require customer ACTIVE, KYC VERIFIED và current expiry; persist `kycStatus`, `cifVerifiedAt`, `kycExpiryDate`, `reviewRequired`, `reviewReason`.
+IMPLEMENTED: call `GET /api/customers/{customerId}`. Require customer ACTIVE, KYC VERIFIED và current expiry; persist narrow verification snapshot gồm `customerFullName`, `customerDateOfBirth`, `customerStatus`, `kycStatus`, `cifVerifiedAt`, `kycExpiryDate`, `reviewRequired`, `reviewReason`.
 
 Contract bổ sung:
 
@@ -48,7 +48,7 @@ Contract bổ sung:
 {"reviewRequired": true, "reviewReason": "CUSTOMER_PROFILE_REVIEW"}
 ```
 
-`reviewRequired=false` bắt buộc reason null; true bắt buộc reason có giá trị enum. Thiếu field, combination sai, enum lạ, empty response, HTTP bất thường hoặc connection failure đều là technical/data-contract error `503 CIF_KYC_SERVICE_UNAVAILABLE`. Customer absent/inactive, KYC unverified/expired là business error và không lưu success snapshot.
+`reviewRequired=false` bắt buộc reason null; true bắt buộc reason có giá trị enum. Thiếu field bắt buộc cho KYC contract, combination sai, enum lạ, empty response, HTTP bất thường hoặc connection failure là technical/data-contract error `503 CIF_KYC_SERVICE_UNAVAILABLE`. Customer absent/inactive, KYC unverified/expired là business error và không lưu success snapshot. Full name/date of birth thiếu không gây NPE; snapshot được đánh giá bởi `REQUIRED_CUSTOMER_DATA` và làm mandatory eligibility fail.
 
 ## 5. Core Banking Mock Integration
 

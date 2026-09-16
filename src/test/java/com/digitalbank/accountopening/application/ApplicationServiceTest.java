@@ -573,6 +573,9 @@ class ApplicationServiceTest {
         assertEquals("VERIFIED", application.getKycStatus());
         assertEquals(OffsetDateTime.ofInstant(TEST_INSTANT, ZoneOffset.UTC), application.getCifVerifiedAt());
         assertEquals(LocalDate.of(2027, 12, 31), application.getKycExpiryDate());
+        assertEquals("Nguyen Van A", application.getCustomerFullName());
+        assertEquals(LocalDate.of(1998, 5, 15), application.getCustomerDateOfBirth());
+        assertEquals("ACTIVE", application.getCustomerStatus());
         assertEquals(false, application.getReviewRequired());
         assertNull(application.getReviewReason());
         verify(cifKycVerificationService).verify("CUS001");
@@ -681,6 +684,7 @@ class ApplicationServiceTest {
                 OffsetDateTime.ofInstant(TEST_INSTANT, ZoneOffset.UTC)
         );
         application.setKycExpiryDate(LocalDate.of(2027, 12, 31));
+        setRequiredCustomerSnapshot(application);
         application.setStatus(ApplicationStatus.SUBMITTED);
 
         when(applicationRepository.findById(applicationId))
@@ -735,6 +739,8 @@ class ApplicationServiceTest {
         application.setStatus(ApplicationStatus.SUBMITTED);
         CifKycVerificationResult result = new CifKycVerificationResult(
                 "CUS002",
+                "Tran Thi B",
+                LocalDate.of(2000, 8, 20),
                 true,
                 "ACTIVE",
                 "VERIFIED",
@@ -751,6 +757,9 @@ class ApplicationServiceTest {
         assertEquals(ReviewReason.CUSTOMER_PROFILE_REVIEW, response.reviewReason());
         assertEquals(true, application.getReviewRequired());
         assertEquals(ReviewReason.CUSTOMER_PROFILE_REVIEW, application.getReviewReason());
+        assertEquals("Tran Thi B", application.getCustomerFullName());
+        assertEquals(LocalDate.of(2000, 8, 20), application.getCustomerDateOfBirth());
+        assertEquals("ACTIVE", application.getCustomerStatus());
         verify(applicationRepository).save(application);
     }
 
@@ -762,6 +771,7 @@ class ApplicationServiceTest {
         application.setKycStatus("VERIFIED");
         application.setCifVerifiedAt(OffsetDateTime.ofInstant(TEST_INSTANT, ZoneOffset.UTC));
         application.setKycExpiryDate(LocalDate.of(2026, 8, 12));
+        setRequiredCustomerSnapshot(application);
         when(applicationRepository.findById(applicationId)).thenReturn(Optional.of(application));
 
         assertThrows(KycAlreadyVerifiedException.class, () -> applicationService.verifyCifKyc(applicationId));
@@ -789,9 +799,32 @@ class ApplicationServiceTest {
         verify(cifKycVerificationService).verify("CUSTOMER-001");
         verify(applicationRepository).save(application);
     }
+
+    @Test
+    void verifyCifKyc_shouldAllowCurrentKycWithIncompleteCustomerSnapshotToRefresh() {
+        UUID applicationId = UUID.randomUUID();
+        AccountApplication application = application(applicationId, "CUS001", "CURRENT_ACCOUNT");
+        application.setStatus(ApplicationStatus.SUBMITTED);
+        application.setKycStatus("VERIFIED");
+        application.setCifVerifiedAt(OffsetDateTime.ofInstant(TEST_INSTANT, ZoneOffset.UTC));
+        application.setKycExpiryDate(LocalDate.of(2027, 12, 31));
+        when(applicationRepository.findById(applicationId)).thenReturn(Optional.of(application));
+        when(cifKycVerificationService.verify("CUS001")).thenReturn(verificationResult("CUS001"));
+
+        applicationService.verifyCifKyc(applicationId);
+
+        assertEquals("Nguyen Van A", application.getCustomerFullName());
+        assertEquals(LocalDate.of(1998, 5, 15), application.getCustomerDateOfBirth());
+        assertEquals("ACTIVE", application.getCustomerStatus());
+        verify(cifKycVerificationService).verify("CUS001");
+        verify(applicationRepository).save(application);
+    }
+
     private CifKycVerificationResult verificationResult(String customerId) {
         return new CifKycVerificationResult(
                 customerId,
+                "Nguyen Van A",
+                LocalDate.of(1998, 5, 15),
                 true,
                 "ACTIVE",
                 "VERIFIED",
@@ -1020,6 +1053,7 @@ class ApplicationServiceTest {
         application.setKycStatus("VERIFIED");
         application.setCifVerifiedAt(OffsetDateTime.ofInstant(TEST_INSTANT, ZoneOffset.UTC));
         application.setKycExpiryDate(LocalDate.of(2026, 8, 12));
+        setRequiredCustomerSnapshot(application);
         RuleEvaluationResult evaluationResult = RuleEvaluationResult.from(List.of(
                 new RuleResult(ApplicationRuleCode.PRODUCT_ACTIVE, true, "Product is active"),
                 new RuleResult(ApplicationRuleCode.KYC_VERIFIED, true, "KYC verification is confirmed")
@@ -1058,6 +1092,7 @@ class ApplicationServiceTest {
         application.setKycStatus("VERIFIED");
         application.setCifVerifiedAt(OffsetDateTime.ofInstant(TEST_INSTANT, ZoneOffset.UTC));
         application.setKycExpiryDate(LocalDate.of(2026, 8, 12));
+        setRequiredCustomerSnapshot(application);
         RuleEvaluationResult evaluationResult = RuleEvaluationResult.from(List.of(
                 new RuleResult(ApplicationRuleCode.PRODUCT_ACTIVE, false, "Product is inactive"),
                 new RuleResult(ApplicationRuleCode.KYC_VERIFIED, true, "KYC verification is confirmed")
@@ -1084,6 +1119,7 @@ class ApplicationServiceTest {
         application.setKycStatus("VERIFIED");
         application.setCifVerifiedAt(OffsetDateTime.ofInstant(TEST_INSTANT, ZoneOffset.UTC));
         application.setKycExpiryDate(LocalDate.of(2026, 8, 12));
+        setRequiredCustomerSnapshot(application);
         application.setReviewRequired(true);
         application.setReviewReason(ReviewReason.CUSTOMER_PROFILE_REVIEW);
         RuleEvaluationResult evaluationResult = RuleEvaluationResult.from(List.of(
@@ -1156,5 +1192,11 @@ class ApplicationServiceTest {
         verifyNoInteractions(applicationRuleEvaluationService);
         verify(historyRepository, never()).save(any());
         verify(applicationRepository, never()).save(any());
+    }
+
+    private void setRequiredCustomerSnapshot(AccountApplication application) {
+        application.setCustomerFullName("Nguyen Van A");
+        application.setCustomerDateOfBirth(LocalDate.of(1998, 5, 15));
+        application.setCustomerStatus("ACTIVE");
     }
 }

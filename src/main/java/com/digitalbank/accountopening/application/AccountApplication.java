@@ -51,6 +51,15 @@ public class AccountApplication {
     @Column(name = "kyc_expiry_date")
     private LocalDate kycExpiryDate;
 
+    @Column(name = "customer_full_name", length = 200)
+    private String customerFullName;
+
+    @Column(name = "customer_date_of_birth")
+    private LocalDate customerDateOfBirth;
+
+    @Column(name = "customer_status", length = 30)
+    private String customerStatus;
+
     @Column(name = "review_required")
     private Boolean reviewRequired;
 

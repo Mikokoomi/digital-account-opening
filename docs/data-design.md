@@ -16,6 +16,9 @@ erDiagram
     ACCOUNT_APPLICATIONS { uuid application_id PK
                            varchar product_code FK
                            varchar status
+                           varchar customer_full_name
+                           date customer_date_of_birth
+                           varchar customer_status
                            varchar kyc_status
                            date kyc_expiry_date
                            boolean review_required
@@ -58,7 +61,7 @@ erDiagram
 | Table | Definition |
 |---|---|
 | `products` | Identity ID, unique code, product fields/flags/timestamps; `min_age >= 0`. |
-| `account_applications` | UUID ID, customer/product/status, KYC snapshot, `review_required/review_reason`, rejection/submission/cancellation/timestamps. |
+| `account_applications` | UUID ID, customer/product/status, narrow customer verification snapshot, KYC snapshot, `review_required/review_reason`, rejection/submission/cancellation/timestamps. |
 | `application_status_history` | UUID ID, application FK, from/to status, actor, reason, time. |
 | `approval_cases` | UUID ID, unique application FK, case status, assignment/review/decision data và timestamps. |
 | `bank_accounts` | Local projection: unique application/external account/account number, status và opened time. |
@@ -72,4 +75,4 @@ erDiagram
 
 ## 4. Data Lifecycle Notes
 
-Flyway V1–V12/JPA là source of truth; V8 tạo local `bank_accounts`, V9 tạo `integration_requests`, V10 tạo `audit_logs`, V11 tạo `notifications`, V12 thêm UNIQUE `(application_id, type)` cho notification. Core Banking Mock có database riêng và là owner của account domain.
+Flyway V1–V13/JPA là source of truth; V8 tạo local `bank_accounts`, V9 tạo `integration_requests`, V10 tạo `audit_logs`, V11 tạo `notifications`, V12 thêm UNIQUE `(application_id, type)` cho notification, V13 thêm `customer_full_name`, `customer_date_of_birth`, `customer_status` vào verification snapshot. Các cột snapshot nullable vì DRAFT/SUBMITTED chưa KYC và record cũ phải refresh KYC trước khi process. Core Banking Mock có database riêng và là owner của account domain.

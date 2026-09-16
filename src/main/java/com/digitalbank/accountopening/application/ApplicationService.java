@@ -208,7 +208,7 @@ public class ApplicationService {
             throw new ApplicationKycCheckNotAllowedException(application.getStatus());
         }
 
-        if (hasCurrentKycVerification(application)) {
+        if (hasCompleteCurrentVerificationSnapshot(application)) {
             throw new KycAlreadyVerifiedException();
         }
 
@@ -224,6 +224,9 @@ public class ApplicationService {
         application.setKycStatus(verificationResult.kycStatus());
         application.setCifVerifiedAt(OffsetDateTime.now(clock));
         application.setKycExpiryDate(verificationResult.kycExpiryDate());
+        application.setCustomerFullName(verificationResult.fullName());
+        application.setCustomerDateOfBirth(verificationResult.dateOfBirth());
+        application.setCustomerStatus(verificationResult.customerStatus());
         application.setReviewRequired(verificationResult.reviewRequired());
         application.setReviewReason(verificationResult.reviewReason());
         applicationRepository.save(application);
@@ -334,6 +337,15 @@ public class ApplicationService {
                 && (Boolean.TRUE.equals(application.getReviewRequired())
                         ? application.getReviewReason() != null
                         : application.getReviewReason() == null);
+    }
+
+    private boolean hasCompleteCurrentVerificationSnapshot(AccountApplication application) {
+        return hasCurrentKycVerification(application)
+                && application.getCustomerFullName() != null
+                && !application.getCustomerFullName().isBlank()
+                && application.getCustomerDateOfBirth() != null
+                && application.getCustomerStatus() != null
+                && !application.getCustomerStatus().isBlank();
     }
 
     private void validateManualReviewSnapshot(AccountApplication application) {

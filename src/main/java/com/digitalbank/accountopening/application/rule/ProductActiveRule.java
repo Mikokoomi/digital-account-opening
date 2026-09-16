@@ -8,7 +8,7 @@ import org.springframework.stereotype.Component;
 import org.springframework.core.annotation.Order;
 
 @Component
-@Order(1)
+@Order(4)
 public class ProductActiveRule implements ApplicationRule {
 
     private final ProductRepository productRepository;

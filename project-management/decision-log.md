@@ -2,7 +2,7 @@
 
 ## DEC-001 - Customer master thuộc CIF/KYC
 
-Customer data không duplicate local; application giữ `customerId`, CIF/KYC cung cấp profile.
+Customer master không duplicate local. CIF/KYC vẫn là owner; application chỉ giữ narrow immutable verification snapshot cần cho mandatory decision, không quản lý customer lifecycle.
 
 ## DEC-002 - Technical CIF/KYC failure không phải business failure
 
@@ -10,7 +10,7 @@ Unavailable/empty/incomplete/unexpected upstream trả `503 CIF_KYC_SERVICE_UNAV
 
 ## DEC-003 - Business rules incremental
 
-Chỉ `PRODUCT_ACTIVE`, `KYC_VERIFIED` được đăng ký vì data đáng tin cậy. Ownership, DOB, risk, customer-data rules là planned.
+Rule engine hiện đăng ký `REQUIRED_CUSTOMER_DATA`, `CUSTOMER_ACTIVE`, `KYC_VERIFIED`, `PRODUCT_ACTIVE`. Các rule chỉ đọc persisted verification/application snapshot và không gọi upstream. Ownership duplicate, age policy và risk vẫn deferred vì chưa có policy/data source phù hợp.
 
 ## DEC-004 - ApprovalCase và application được quyết định nguyên tử
 

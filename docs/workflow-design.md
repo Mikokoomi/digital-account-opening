@@ -16,7 +16,7 @@ flowchart TD
     F --> G{KYC valid?}
     G -- No --> X[Business/technical error]
     G -- Yes --> H[Store/check KYC snapshot]
-    H --> J[Mandatory checks: ProductActiveRule + KycVerifiedRule]
+    H --> J[Mandatory checks: required data + customer active + KYC + product]
     J --> K{Mandatory conditions pass?}
     K -- No --> X1[BLOCK: remain SUBMITTED, no ApprovalCase]
     K -- Yes --> RQ{reviewRequired?}
@@ -69,10 +69,12 @@ Current public operations: create DRAFT, DRAFT→SUBMITTED, DRAFT/SUBMITTED→CA
 
 | Rule | Status | Pass condition | Fail |
 |---|---|---|---|
+| `REQUIRED_CUSTOMER_DATA` | IMPLEMENTED | `customerId`, verified full name và date of birth đều hiện diện; string không blank. | Thiếu/null/blank required snapshot field. |
+| `CUSTOMER_ACTIVE` | IMPLEMENTED | Persisted customer status là `ACTIVE`. | Status thiếu, `BLOCKED`, `INACTIVE` hoặc value khác. |
 | `PRODUCT_ACTIVE` | IMPLEMENTED | Product exists and active. | Inactive/null; missing product is exception. |
 | `KYC_VERIFIED` | IMPLEMENTED | VERIFIED, timestamp/expiry exist and expiry current. | Missing/invalid/expired snapshot. |
 
-`eligible` của rule evaluation chỉ có nghĩa mandatory conditions đã thỏa mãn. Nó không còn quyết định manual review. Future enhancements: duplicate product needs ownership data; age needs verified DOB; advanced customer/risk rules cần approved inputs/policy.
+`eligible` của rule evaluation chỉ có nghĩa mandatory conditions đã thỏa mãn. Nó không còn quyết định manual review. Future enhancements: duplicate product needs ownership data; age needs an approved policy; advanced risk rules cần approved inputs/policy.
 
 ## 6. Rule Evaluation Outcomes
 

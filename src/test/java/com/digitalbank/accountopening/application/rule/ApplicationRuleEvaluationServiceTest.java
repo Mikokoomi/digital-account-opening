@@ -28,11 +28,7 @@ class ApplicationRuleEvaluationServiceTest {
 
     @Test
     void activeProductAndVerifiedKyc_shouldBeEligible() {
-        ProductRepository productRepository = activeProductRepository();
-        ApplicationRuleEvaluationService service = new ApplicationRuleEvaluationService(List.of(
-                new ProductActiveRule(productRepository),
-                new KycVerifiedRule(CLOCK)
-        ));
+        ApplicationRuleEvaluationService service = service();
 
         RuleEvaluationResult result = service.evaluate(application(
                 "VERIFIED",
@@ -41,23 +37,76 @@ class ApplicationRuleEvaluationServiceTest {
         ));
 
         assertTrue(result.eligible());
-        assertEquals(2, result.ruleResults().size());
+        assertEquals(4, result.ruleResults().size());
+        assertEquals(List.of(
+                        ApplicationRuleCode.REQUIRED_CUSTOMER_DATA,
+                        ApplicationRuleCode.CUSTOMER_ACTIVE,
+                        ApplicationRuleCode.KYC_VERIFIED,
+                        ApplicationRuleCode.PRODUCT_ACTIVE
+                ),
+                result.ruleResults().stream().map(RuleResult::ruleCode).toList());
         assertTrue(result.failedRules().isEmpty());
     }
 
     @Test
     void activeProductAndUnverifiedKyc_shouldNotBeEligible() {
-        ProductRepository productRepository = activeProductRepository();
-        ApplicationRuleEvaluationService service = new ApplicationRuleEvaluationService(List.of(
-                new ProductActiveRule(productRepository),
-                new KycVerifiedRule(CLOCK)
-        ));
+        ApplicationRuleEvaluationService service = service();
 
         RuleEvaluationResult result = service.evaluate(application(null, null, null));
 
         assertFalse(result.eligible());
         assertEquals(1, result.failedRules().size());
         assertEquals(ApplicationRuleCode.KYC_VERIFIED, result.failedRules().getFirst().ruleCode());
+    }
+
+    @Test
+    void inactiveCustomer_shouldNotBeEligibleAndReportCustomerRule() {
+        AccountApplication application = application("VERIFIED", OffsetDateTime.now(CLOCK), LocalDate.of(2026, 8, 22));
+        application.setCustomerStatus("INACTIVE");
+
+        RuleEvaluationResult result = service().evaluate(application);
+
+        assertFalse(result.eligible());
+        assertEquals(List.of(ApplicationRuleCode.CUSTOMER_ACTIVE),
+                result.failedRules().stream().map(RuleResult::ruleCode).toList());
+    }
+
+    @Test
+    void missingRequiredCustomerData_shouldNotBeEligibleAndReportRequiredDataRule() {
+        AccountApplication application = application("VERIFIED", OffsetDateTime.now(CLOCK), LocalDate.of(2026, 8, 22));
+        application.setCustomerFullName(null);
+
+        RuleEvaluationResult result = service().evaluate(application);
+
+        assertFalse(result.eligible());
+        assertEquals(List.of(ApplicationRuleCode.REQUIRED_CUSTOMER_DATA),
+                result.failedRules().stream().map(RuleResult::ruleCode).toList());
+    }
+
+    @Test
+    void multipleRuleFailures_shouldReturnEveryFailedRule() {
+        AccountApplication application = application(null, null, null);
+        application.setCustomerFullName(" ");
+        application.setCustomerStatus("BLOCKED");
+
+        RuleEvaluationResult result = service().evaluate(application);
+
+        assertFalse(result.eligible());
+        assertEquals(List.of(
+                        ApplicationRuleCode.REQUIRED_CUSTOMER_DATA,
+                        ApplicationRuleCode.CUSTOMER_ACTIVE,
+                        ApplicationRuleCode.KYC_VERIFIED
+                ),
+                result.failedRules().stream().map(RuleResult::ruleCode).toList());
+    }
+
+    private ApplicationRuleEvaluationService service() {
+        return new ApplicationRuleEvaluationService(List.of(
+                new RequiredCustomerDataRule(),
+                new CustomerActiveRule(),
+                new KycVerifiedRule(CLOCK),
+                new ProductActiveRule(activeProductRepository())
+        ));
     }
 
     private ProductRepository activeProductRepository() {
@@ -76,6 +125,10 @@ class ApplicationRuleEvaluationServiceTest {
     ) {
         AccountApplication application = new AccountApplication();
         application.setProductCode("DIGITAL_SAVING");
+        application.setCustomerId("CUS001");
+        application.setCustomerFullName("Nguyen Van A");
+        application.setCustomerDateOfBirth(LocalDate.of(1998, 5, 15));
+        application.setCustomerStatus("ACTIVE");
         application.setKycStatus(kycStatus);
         application.setCifVerifiedAt(cifVerifiedAt);
         application.setKycExpiryDate(kycExpiryDate);
