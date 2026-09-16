@@ -46,7 +46,7 @@ class ApplicationRuleEvaluationServiceTest {
                         ApplicationRuleCode.DUPLICATE_APPLICATION,
                         ApplicationRuleCode.KYC_VERIFIED,
                         ApplicationRuleCode.PRODUCT_ACTIVE,
-                        ApplicationRuleCode.DUPLICATE_PRODUCT
+                        ApplicationRuleCode.EXISTING_PRODUCT_ACCOUNT
                 ),
                 result.ruleResults().stream().map(RuleResult::ruleCode).toList());
         assertTrue(result.failedRules().isEmpty());

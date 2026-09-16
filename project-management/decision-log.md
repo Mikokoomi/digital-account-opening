@@ -10,7 +10,7 @@ Unavailable/empty/incomplete/unexpected upstream trả `503 CIF_KYC_SERVICE_UNAV
 
 ## DEC-003 - Business rules incremental
 
-Rule engine hiện đăng ký `REQUIRED_CUSTOMER_DATA`, `CUSTOMER_ACTIVE`, `DUPLICATE_APPLICATION`, `KYC_VERIFIED`, `PRODUCT_ACTIVE`, `DUPLICATE_PRODUCT`. Các rule chỉ đọc persisted snapshot/repository local và không gọi upstream. Age policy và risk vẫn deferred vì chưa có policy/data source phù hợp.
+Rule engine hiện đăng ký `REQUIRED_CUSTOMER_DATA`, `CUSTOMER_ACTIVE`, `DUPLICATE_APPLICATION`, `KYC_VERIFIED`, `PRODUCT_ACTIVE`, `EXISTING_PRODUCT_ACCOUNT`. Các rule chỉ đọc persisted snapshot/repository local và không gọi upstream. Age policy và risk vẫn deferred vì chưa có policy/data source phù hợp.
 
 ## DEC-004 - ApprovalCase và application được quyết định nguyên tử
 
@@ -80,7 +80,7 @@ Một application khác cùng `customerId` và `productCode` chỉ block khi ở
 
 ## DEC-020 - Existing-product ownership tuân theo Product.allowMultipleAccounts
 
-`allow_multiple_accounts` đã là policy persisted từ V1 và sample product từ V2. Khi false, local `bank_accounts` projection chứng minh customer đã sở hữu product và rule `DUPLICATE_PRODUCT` block application mới; khi true, ownership không block. Không cần migration mới.
+`allow_multiple_accounts` đã là policy persisted từ V1 và sample product từ V2. Khi false, local `bank_accounts` projection chứng minh customer đã sở hữu product và rule `EXISTING_PRODUCT_ACCOUNT` block application mới; khi true, ownership không block. Tên rule phân biệt rõ ownership conflict với `DUPLICATE_APPLICATION`. Không cần migration mới.
 
 ## DEC-021 - Manual review tiếp tục dùng CIF/KYC review signal
 

@@ -14,6 +14,7 @@ import java.util.Optional;
 import java.util.UUID;
 
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
@@ -37,7 +38,10 @@ class ExistingProductAccountRuleTest {
         when(productRepository.findByProductCode(application.getProductCode()))
                 .thenReturn(Optional.of(product(true)));
 
-        assertTrue(rule.evaluate(application).passed());
+        RuleResult result = rule.evaluate(application);
+
+        assertTrue(result.passed());
+        assertEquals(ApplicationRuleCode.EXISTING_PRODUCT_ACCOUNT, result.ruleCode());
         verify(bankAccountRepository, never())
                 .existsByApplicationCustomerIdAndApplicationProductCodeAndApplicationApplicationIdNot(
                         application.getCustomerId(), application.getProductCode(), application.getApplicationId());
@@ -53,7 +57,10 @@ class ExistingProductAccountRuleTest {
                         application.getCustomerId(), application.getProductCode(), application.getApplicationId()))
                 .thenReturn(true);
 
-        assertFalse(rule.evaluate(application).passed());
+        RuleResult result = rule.evaluate(application);
+
+        assertFalse(result.passed());
+        assertEquals(ApplicationRuleCode.EXISTING_PRODUCT_ACCOUNT, result.ruleCode());
     }
 
     @Test

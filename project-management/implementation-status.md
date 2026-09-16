@@ -9,7 +9,7 @@
 - Tất cả application API dùng UUID `applicationId`; không có `applicationNumber`.
 - Lưu history cho create, submit, cancel và mọi process transition.
 - CIF/KYC HTTP client: mandatory customer/KYC validation; success lưu narrow customer/KYC snapshot cùng `reviewRequired/reviewReason`; invalid KYC contract trả technical 503.
-- Rule engine chạy mandatory rules theo thứ tự `REQUIRED_CUSTOMER_DATA`, `CUSTOMER_ACTIVE`, `DUPLICATE_APPLICATION`, `KYC_VERIFIED`, `PRODUCT_ACTIVE`, `DUPLICATE_PRODUCT`; `eligible` nghĩa mọi mandatory condition satisfied; evaluation read-only.
+- Rule engine chạy mandatory rules theo thứ tự `REQUIRED_CUSTOMER_DATA`, `CUSTOMER_ACTIVE`, `DUPLICATE_APPLICATION`, `KYC_VERIFIED`, `PRODUCT_ACTIVE`, `EXISTING_PRODUCT_ACCOUNT`; `eligible` nghĩa mọi mandatory condition satisfied; evaluation read-only.
 - Duplicate application chặn application khác cùng customer/product đang processing; existing-account policy dùng `Product.allowMultipleAccounts` và local `bank_accounts` projection.
 - Decision model: mandatory fail BLOCK và giữ SUBMITTED; mandatory pass + no review auto-approve; pass + review signal route UNDER_REVIEW.
 - Staff Approval: một ApprovalCase/application; `PENDING → ASSIGNED → APPROVED/REJECTED`; list/detail/filter, assignment và staff decision APIs.

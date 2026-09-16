@@ -39,12 +39,12 @@ class RuleEvaluationResultTest {
         RuleEvaluationResult result = RuleEvaluationResult.from(List.of(
                 result(ApplicationRuleCode.PRODUCT_ACTIVE, false),
                 result(ApplicationRuleCode.KYC_VERIFIED, true),
-                result(ApplicationRuleCode.DUPLICATE_PRODUCT, false)
+                result(ApplicationRuleCode.EXISTING_PRODUCT_ACCOUNT, false)
         ));
 
         assertFalse(result.eligible());
         assertEquals(
-                List.of(ApplicationRuleCode.PRODUCT_ACTIVE, ApplicationRuleCode.DUPLICATE_PRODUCT),
+                List.of(ApplicationRuleCode.PRODUCT_ACTIVE, ApplicationRuleCode.EXISTING_PRODUCT_ACCOUNT),
                 result.failedRules().stream().map(RuleResult::ruleCode).toList()
         );
     }

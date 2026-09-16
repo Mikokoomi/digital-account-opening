@@ -41,7 +41,7 @@ public class ExistingProductAccountRule implements ApplicationRule {
 
         return existingAccount
                 ? new RuleResult(
-                        ApplicationRuleCode.DUPLICATE_PRODUCT,
+                        ApplicationRuleCode.EXISTING_PRODUCT_ACCOUNT,
                         false,
                         "Customer already owns an account for this product"
                 )
@@ -49,6 +49,6 @@ public class ExistingProductAccountRule implements ApplicationRule {
     }
 
     private RuleResult passed(String message) {
-        return new RuleResult(ApplicationRuleCode.DUPLICATE_PRODUCT, true, message);
+        return new RuleResult(ApplicationRuleCode.EXISTING_PRODUCT_ACCOUNT, true, message);
     }
 }

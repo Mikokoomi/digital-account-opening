@@ -43,7 +43,7 @@ Backend project mô phỏng quy trình khách hàng hiện hữu đăng ký mở
 - `DUPLICATE_APPLICATION`
 - `PRODUCT_ACTIVE`
 - `KYC_VERIFIED`
-- `DUPLICATE_PRODUCT`
+- `EXISTING_PRODUCT_ACCOUNT`
 
 `eligible=true` chỉ có nghĩa các mandatory business conditions đã thỏa mãn. Giá trị này không quyết định manual review.
 
