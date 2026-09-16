@@ -10,7 +10,7 @@ Unavailable/empty/incomplete/unexpected upstream trả `503 CIF_KYC_SERVICE_UNAV
 
 ## DEC-003 - Business rules incremental
 
-Rule engine hiện đăng ký `REQUIRED_CUSTOMER_DATA`, `CUSTOMER_ACTIVE`, `KYC_VERIFIED`, `PRODUCT_ACTIVE`. Các rule chỉ đọc persisted verification/application snapshot và không gọi upstream. Ownership duplicate, age policy và risk vẫn deferred vì chưa có policy/data source phù hợp.
+Rule engine hiện đăng ký `REQUIRED_CUSTOMER_DATA`, `CUSTOMER_ACTIVE`, `DUPLICATE_APPLICATION`, `KYC_VERIFIED`, `PRODUCT_ACTIVE`, `DUPLICATE_PRODUCT`. Các rule chỉ đọc persisted snapshot/repository local và không gọi upstream. Age policy và risk vẫn deferred vì chưa có policy/data source phù hợp.
 
 ## DEC-004 - ApprovalCase và application được quyết định nguyên tử
 
@@ -73,3 +73,15 @@ Repeated create-account sau `COMPLETED` trả local result, không tạo thêm `
 ## DEC-018 - Notification uniqueness được bảo vệ ở service và database
 
 Notification creation khóa row application, kiểm tra existing notification rồi mới insert. Service guard tránh insert/send thừa trong luồng thường; UNIQUE `(application_id, type)` là lớp bảo vệ cuối trước concurrent hoặc alternate write path. Notification `FAILED` không tự tạo row mới vì retry notification chưa thuộc scope.
+
+## DEC-019 - Duplicate application chỉ xét workflow đang xử lý
+
+Một application khác cùng `customerId` và `productCode` chỉ block khi ở `SUBMITTED`, `UNDER_REVIEW`, `APPROVED`, `ACCOUNT_CREATING` hoặc `RETRY_PENDING`. Current application được loại khỏi query; DRAFT và terminal history không block. Đây là hard mandatory failure, không route manual review.
+
+## DEC-020 - Existing-product ownership tuân theo Product.allowMultipleAccounts
+
+`allow_multiple_accounts` đã là policy persisted từ V1 và sample product từ V2. Khi false, local `bank_accounts` projection chứng minh customer đã sở hữu product và rule `DUPLICATE_PRODUCT` block application mới; khi true, ownership không block. Không cần migration mới.
+
+## DEC-021 - Manual review tiếp tục dùng CIF/KYC review signal
+
+Trigger được xác nhận là persisted `reviewRequired/reviewReason`. `Product.requiresManualReview` hiện không có wiring trong process flow nên không được tự diễn giải thành trigger mới. Mọi trigger manual-review khác vẫn PENDING BUSINESS CONFIRMATION.

@@ -71,10 +71,12 @@ Current public operations: create DRAFT, DRAFT→SUBMITTED, DRAFT/SUBMITTED→CA
 |---|---|---|---|
 | `REQUIRED_CUSTOMER_DATA` | IMPLEMENTED | `customerId`, verified full name và date of birth đều hiện diện; string không blank. | Thiếu/null/blank required snapshot field. |
 | `CUSTOMER_ACTIVE` | IMPLEMENTED | Persisted customer status là `ACTIVE`. | Status thiếu, `BLOCKED`, `INACTIVE` hoặc value khác. |
-| `PRODUCT_ACTIVE` | IMPLEMENTED | Product exists and active. | Inactive/null; missing product is exception. |
+| `DUPLICATE_APPLICATION` | IMPLEMENTED | Không có application khác cùng customer/product ở processing status. | Có application khác ở `SUBMITTED`, `UNDER_REVIEW`, `APPROVED`, `ACCOUNT_CREATING` hoặc `RETRY_PENDING`. |
 | `KYC_VERIFIED` | IMPLEMENTED | VERIFIED, timestamp/expiry exist and expiry current. | Missing/invalid/expired snapshot. |
+| `PRODUCT_ACTIVE` | IMPLEMENTED | Product exists and active. | Inactive/null; missing product is exception. |
+| `DUPLICATE_PRODUCT` | IMPLEMENTED | Product cho phép multiple, hoặc customer chưa có BankAccount cho product không cho multiple. | Customer đã có account cùng product khi `allowMultipleAccounts=false`. |
 
-`eligible` của rule evaluation chỉ có nghĩa mandatory conditions đã thỏa mãn. Nó không còn quyết định manual review. Future enhancements: duplicate product needs ownership data; age needs an approved policy; advanced risk rules cần approved inputs/policy.
+`eligible` của rule evaluation chỉ có nghĩa mandatory conditions đã thỏa mãn. Nó không quyết định manual review. DRAFT và các application terminal (`REJECTED`, `CANCELLED`, `FAILED`, `COMPLETED`) không được xem là duplicate đang xử lý. Future enhancements: age cần approved policy; advanced risk rules cần approved inputs/policy.
 
 ## 6. Rule Evaluation Outcomes
 

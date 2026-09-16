@@ -1,6 +1,8 @@
 package com.digitalbank.accountopening.application.rule;
 
 import com.digitalbank.accountopening.application.AccountApplication;
+import com.digitalbank.accountopening.application.AccountApplicationRepository;
+import com.digitalbank.accountopening.bankaccount.BankAccountRepository;
 import com.digitalbank.accountopening.product.Product;
 import com.digitalbank.accountopening.product.ProductRepository;
 import org.junit.jupiter.api.Test;
@@ -37,12 +39,14 @@ class ApplicationRuleEvaluationServiceTest {
         ));
 
         assertTrue(result.eligible());
-        assertEquals(4, result.ruleResults().size());
+        assertEquals(6, result.ruleResults().size());
         assertEquals(List.of(
                         ApplicationRuleCode.REQUIRED_CUSTOMER_DATA,
                         ApplicationRuleCode.CUSTOMER_ACTIVE,
+                        ApplicationRuleCode.DUPLICATE_APPLICATION,
                         ApplicationRuleCode.KYC_VERIFIED,
-                        ApplicationRuleCode.PRODUCT_ACTIVE
+                        ApplicationRuleCode.PRODUCT_ACTIVE,
+                        ApplicationRuleCode.DUPLICATE_PRODUCT
                 ),
                 result.ruleResults().stream().map(RuleResult::ruleCode).toList());
         assertTrue(result.failedRules().isEmpty());
@@ -101,11 +105,14 @@ class ApplicationRuleEvaluationServiceTest {
     }
 
     private ApplicationRuleEvaluationService service() {
+        ProductRepository productRepository = activeProductRepository();
         return new ApplicationRuleEvaluationService(List.of(
                 new RequiredCustomerDataRule(),
                 new CustomerActiveRule(),
+                new DuplicateApplicationRule(mock(AccountApplicationRepository.class)),
                 new KycVerifiedRule(CLOCK),
-                new ProductActiveRule(activeProductRepository())
+                new ProductActiveRule(productRepository),
+                new ExistingProductAccountRule(productRepository, mock(BankAccountRepository.class))
         ));
     }
 
@@ -113,6 +120,7 @@ class ApplicationRuleEvaluationServiceTest {
         ProductRepository productRepository = mock(ProductRepository.class);
         Product product = new Product();
         product.setActive(true);
+        product.setAllowMultipleAccounts(true);
         when(productRepository.findByProductCode("DIGITAL_SAVING"))
                 .thenReturn(Optional.of(product));
         return productRepository;

@@ -40,8 +40,10 @@ Backend project mô phỏng quy trình khách hàng hiện hữu đăng ký mở
 
 - `REQUIRED_CUSTOMER_DATA`
 - `CUSTOMER_ACTIVE`
+- `DUPLICATE_APPLICATION`
 - `PRODUCT_ACTIVE`
 - `KYC_VERIFIED`
+- `DUPLICATE_PRODUCT`
 
 `eligible=true` chỉ có nghĩa các mandatory business conditions đã thỏa mãn. Giá trị này không quyết định manual review.
 
@@ -289,7 +291,7 @@ Current regression suite được xác nhận bằng `./mvnw.cmd clean test`; te
 
 ## Phạm vi hiện tại
 
-Implemented: existing customer account opening, product validation, CIF/KYC, mandatory rules, manual review, staff approval, Core Banking integration, idempotent account provisioning, bounded retry, integration tracking, manual recovery, local account reference, status history, audit logging và notification persistence/logging delivery.
+Implemented: existing customer account opening, product validation, CIF/KYC, mandatory rules (gồm duplicate application và ownership theo `allowMultipleAccounts`), manual review, staff approval, Core Banking integration, idempotent account provisioning, bounded retry, integration tracking, manual recovery, local account reference, status history, audit logging và notification persistence/logging delivery.
 
 Currently not implemented: real email/SMS/push, notification retry scheduler, scheduled account retry, generalized reconciliation, Kafka/RabbitMQ và authentication/RBAC.
 

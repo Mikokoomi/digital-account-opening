@@ -8,7 +8,7 @@ import java.time.Clock;
 import java.time.LocalDate;
 
 @Component
-@Order(3)
+@Order(4)
 public class KycVerifiedRule implements ApplicationRule {
 
     private static final String VERIFIED = "VERIFIED";

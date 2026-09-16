@@ -6,5 +6,10 @@ import java.util.Optional;
 
 public interface BankAccountRepository extends JpaRepository<BankAccount, UUID> {
     boolean existsByApplicationApplicationId(UUID applicationId);
+    boolean existsByApplicationCustomerIdAndApplicationProductCodeAndApplicationApplicationIdNot(
+            String customerId,
+            String productCode,
+            UUID applicationId
+    );
     Optional<BankAccount> findByApplicationApplicationId(UUID applicationId);
 }
